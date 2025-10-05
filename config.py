@@ -1,0 +1,20 @@
+# Re-command Recommendation Script Configuration
+DEEZER_ARL = "f04d1d85acf604ade5321eab97dca4c017005bdb12f0ba8262b83918be6fdf9ef52965edcdc44a92bbb69df01ba8e04fd6fa647803123a2ff463765270611309b5c1885e8e87ac2d748f69a488d4c9d74c6a8aa2e5333764265358d76cfaf902"
+DOWNLOAD_METHOD = "streamrip"
+LASTFM_API_KEY = "e751b6fd8f49f83b4b00dc01d3e250cb"
+LASTFM_API_SECRET = "bf20da45f998394ab4783e83922d5f49"
+LASTFM_ENABLED = True
+LASTFM_SESSION_KEY = "6uaCVEpUwTdkGa-RIiAIwD1UZ1pRrjxS"
+LASTFM_TARGET_COMMENT = "lastfm_recommendation"
+LASTFM_USERNAME = "Snappysnappy"
+LISTENBRAINZ_ENABLED = True
+MUSIC_LIBRARY_PATH = "/home/ubuntu/Homarrapps/Music"
+PASSWORD_ND = "Put3put3!"
+PLAYLIST_HISTORY_FILE = "playlist_history.txt"
+ROOT_LB = "https://api.listenbrainz.org"
+ROOT_ND = "http://magicvpn.top:4533"
+TARGET_COMMENT = "recommendation"
+TEMP_DOWNLOAD_FOLDER = "/home/ubuntu/Homarrapps/Music/.tempfolder"
+TOKEN_LB = "4b152a56-7c1b-4139-85a3-a84cbff2fa32"
+USER_LB = "Snappysnappy"
+USER_ND = "Snappy"

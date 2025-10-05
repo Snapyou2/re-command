@@ -1,0 +1,6 @@
+requests
+tqdm
+deemix
+pylast
+streamrip
+mutagen
