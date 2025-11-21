@@ -4,19 +4,44 @@ import os
 import requests
 import webbrowser
 import importlib
+import concurrent.futures
+from apis.deezer_api import DeezerAPI
+from config import *
 
 class LastFmAPI:
-    def __init__(self, config_manager):
-        self.config_manager = config_manager
+    def __init__(self):
         self.network = None
+
+    def _make_request_with_retries(self, method, url, headers, params=None, json=None, max_retries=5, retry_delay=5):
+        """
+        Makes an HTTP request with retry logic for connection errors.
+        """
+        for attempt in range(max_retries):
+            try:
+                if method == "GET":
+                    response = requests.get(url, headers=headers, params=params)
+                elif method == "POST":
+                    response = requests.post(url, headers=headers, json=json)
+                response.raise_for_status()
+                return response
+            except requests.exceptions.ConnectionError as e:
+                print(f"Connection error on attempt {attempt + 1}/{max_retries}: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                else:
+                    raise
+            except requests.exceptions.RequestException as e:
+                print(f"Request error on attempt {attempt + 1}/{max_retries}: {e}")
+                raise
+        return None
 
     def authenticate_lastfm(self):
         """Authenticates with Last.fm using pylast."""
-        api_key = self.config_manager.get("LASTFM_API_KEY")
-        api_secret = self.config_manager.get("LASTFM_API_SECRET")
-        username = self.config_manager.get("LASTFM_USERNAME")
-        password_hash = self.config_manager.get("LASTFM_PASSWORD_HASH")
-        session_key = self.config_manager.get("LASTFM_SESSION_KEY")
+        api_key = LASTFM_API_KEY
+        api_secret = LASTFM_API_SECRET
+        username = LASTFM_USERNAME
+        password_hash = LASTFM_PASSWORD_HASH
+        session_key = LASTFM_SESSION_KEY
 
         if not (api_key and api_secret and username):
             print("Last.fm API key, secret, or username not configured.")
@@ -51,7 +76,6 @@ class LastFmAPI:
                 input("Press Enter after you have authorized the application...")
                 try:
                     session_key = skg.get_web_auth_session_key(url)
-                    self.config_manager.set("LASTFM_SESSION_KEY", session_key)
                     self.network.session_key = session_key
                     break
                 except pylast.WSError as e:
@@ -70,7 +94,7 @@ class LastFmAPI:
             print("Last.fm not authenticated.")
             return []
 
-        username = self.config_manager.get("LASTFM_USERNAME")
+        username = LASTFM_USERNAME
         recommendations = []
 
         url = f"https://www.last.fm/player/station/user/{username}/recommended"
@@ -80,8 +104,14 @@ class LastFmAPI:
         }
 
         try:
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
+            response = self._make_request_with_retries(
+                method="GET",
+                url=url,
+                headers=headers
+            )
+            if response is None:
+                print("Failed to get response from Last.fm API after retries.")
+                return []
             data = response.json()
 
             for track_data in data["playlist"]:
@@ -100,13 +130,16 @@ class LastFmAPI:
         except requests.exceptions.RequestException as e:
             print(f"Error fetching Last.fm recommendations: {e}")
             return []
-        except KeyError:
-            print("Unexpected Last.fm API response structure for recommendations.")
+        except KeyError as e:
+            print(f"Unexpected Last.fm API response structure for recommendations: missing key {e}")
+            return []
+        except Exception as e:
+            print(f"Unexpected error in Last.fm API: {e}")
             return []
 
     def get_lastfm_recommendations(self):
         """Fetches recommended tracks from Last.fm and returns them as a list."""
-        if not self.config_manager.get("LASTFM_ENABLED"):
+        if not LASTFM_ENABLED:
             return []
 
         print("\nChecking for new Last.fm recommendations...")
@@ -132,15 +165,29 @@ class LastFmAPI:
             print("No recommendations found from Last.fm.")
             return []
 
+        # Parallel album arts fetching
+        def fetch_art(track):
+            deezer_api = DeezerAPI()
+            details = deezer_api.get_deezer_track_details_from_artist_title(track["artist"], track["title"])
+            return details
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            album_details = list(executor.map(fetch_art, recommended_tracks))
+
         songs = []
-        for track in recommended_tracks:
-            songs.append({
+        for i, track in enumerate(recommended_tracks):
+            song = {
                 "artist": track["artist"],
                 "title": track["title"],
                 "album": track["album"],
                 "release_date": track["release_date"],
+                "album_art": None,
                 "recording_mbid": None,
-                "release_mbid": None,
                 "source": "Last.fm"
-            })
+            }
+            details = album_details[i]
+            if details:
+                song["album_art"] = details.get("album_art")
+                song["album"] = details.get("album", song["album"])
+            songs.append(song)
         return songs

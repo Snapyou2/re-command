@@ -2,7 +2,13 @@ import os
 import re
 import subprocess
 import requests
-from mutagen.id3 import ID3, COMM, error
+from mutagen.id3 import ID3, COMM, APIC, error
+from mutagen.mp3 import MP3
+from mutagen.flac import FLAC
+from mutagen.oggvorbis import OggVorbis
+from mutagen.m4a import M4A
+import imghdr
+from config import *
 
 def get_last_playlist_name(playlist_history_file):
     """Retrieves the last playlist name from the history file."""
@@ -36,23 +42,88 @@ def remove_empty_folders(path):
                     print(f"Error removing folder: {full_path}. Error: {e}")
 
 class Tagger:
-    def __init__(self, config_manager):
-        self.config_manager = config_manager
-        self.target_comment = self.config_manager.get("TARGET_COMMENT")
-        self.lastfm_target_comment = self.config_manager.get("LASTFM_TARGET_COMMENT")
+    def __init__(self):
+        self.target_comment = TARGET_COMMENT
+        self.lastfm_target_comment = LASTFM_TARGET_COMMENT
 
-    def add_comment_to_file(self, mp3_file, comment):
-        """Add a comment to a specific MP3 file."""
+    def add_comment_to_file(self, file_path, comment):
+        """Add a comment to a specific audio file."""
         try:
-            id3v2_3 = ID3(mp3_file, translate=False, load_v1=False)
+            audio = ID3(file_path)
         except error.ID3NoHeaderError:
-            id3v2_3 = ID3()
+            audio = ID3()
 
-        id3v2_3.add(COMM(encoding=3, lang='eng', desc='', text=comment))
-        id3v2_3.save(mp3_file, v2_version=3, v1=2)
+        audio.add(COMM(encoding=3, lang='eng', desc='', text=comment))
+        audio.save(file_path, v2_version=3, v1=2)
 
-    def tag_track(self, file_path, artist, title, album, release_date, recording_mbid, source):
-        """Tags a track with metadata using kid3-cli."""
+    def _embed_album_art(self, file_path, album_art_url):
+        """Downloads and embeds album art into the audio file."""
+        if not album_art_url:
+            print(f"No album art URL provided for {file_path}.")
+            return
+
+        try:
+            response = requests.get(album_art_url, stream=True)
+            response.raise_for_status()
+            image_data = response.content
+
+            image_type = imghdr.what(None, h=image_data)
+            if not image_type:
+                print(f"Could not determine image type for {album_art_url}. Skipping embedding.")
+                return
+
+            mime_type = f"image/{image_type}"
+
+            if file_path.lower().endswith('.mp3'):
+                audio = MP3(file_path, ID3=ID3)
+                audio.tags.add(
+                    APIC(
+                        encoding=3,
+                        mime=mime_type,
+                        type=3,
+                        desc='Cover',
+                        data=image_data
+                    )
+                )
+                audio.save()
+                print(f"Embedded album art into MP3: {file_path}")
+            elif file_path.lower().endswith('.flac'):
+                audio = FLAC(file_path)
+                image = FLAC.Picture()
+                image.data = image_data
+                image.type = 3
+                image.mime = mime_type
+                audio.add_picture(image)
+                audio.save()
+                print(f"Embedded album art into FLAC: {file_path}")
+            elif file_path.lower().endswith(('.ogg', '.oga')):
+                audio = OggVorbis(file_path)
+                image = OggVorbis.Picture()
+                image.data = image_data
+                image.type = 3
+                image.mime = mime_type
+                audio.add_picture(image)
+                audio.save()
+                print(f"Embedded album art into OggVorbis: {file_path}")
+            elif file_path.lower().endswith('.m4a'):
+                audio = M4A(file_path)
+                image = M4A.Picture()
+                image.data = image_data
+                image.type = 3
+                image.mime = mime_type
+                audio.tags['covr'] = [image]
+                audio.save()
+                print(f"Embedded album art into M4A: {file_path}")
+            else:
+                print(f"Unsupported file type for album art embedding: {file_path}")
+
+        except requests.exceptions.RequestException as e:
+            print(f"Error downloading album art from {album_art_url}: {e}")
+        except Exception as e:
+            print(f"Error embedding album art into {file_path}: {e}")
+
+    def tag_track(self, file_path, artist, title, album, release_date, recording_mbid, source, album_art_url=None):
+        """Tags a track with metadata using kid3-cli and embeds album art."""
         comment = self.target_comment if source == "ListenBrainz" else self.lastfm_target_comment
         try:
             commands = [
@@ -67,6 +138,10 @@ class Tagger:
             commands.append(file_path)
 
             subprocess.run(["kid3-cli"] + commands, check=True)
+            
+            if album_art_url:
+                self._embed_album_art(file_path, album_art_url)
+
         except subprocess.CalledProcessError as e:
             print(f"Error tagging {file_path}: {e}")
         except FileNotFoundError:
@@ -74,11 +149,9 @@ class Tagger:
 
     def get_album_art(self, album_id, salt, token):
         """Fetches album art from Navidrome."""
-        root_nd = self.config_manager.get("ROOT_ND")
-        user_nd = self.config_manager.get("USER_ND")
-        url = f"{root_nd}/rest/getCoverArt.view"
+        url = f"{ROOT_ND}/rest/getCoverArt.view"
         params = {
-            'u': user_nd,
+            'u': USER_ND,
             't': token,
             's': salt,
             'v': '1.16.1',

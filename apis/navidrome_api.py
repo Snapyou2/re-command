@@ -3,17 +3,18 @@ import hashlib
 import os
 import subprocess
 import sys
+import shutil
 from tqdm import tqdm
+from config import *
 
 class NavidromeAPI:
-    def __init__(self, config_manager):
-        self.config_manager = config_manager
-        self.root_nd = self.config_manager.get("ROOT_ND")
-        self.user_nd = self.config_manager.get("USER_ND")
-        self.password_nd = self.config_manager.get("PASSWORD_ND")
-        self.music_library_path = self.config_manager.get("MUSIC_LIBRARY_PATH")
-        self.target_comment = self.config_manager.get("TARGET_COMMENT")
-        self.lastfm_target_comment = self.config_manager.get("LASTFM_TARGET_COMMENT")
+    def __init__(self):
+        self.root_nd = ROOT_ND
+        self.user_nd = USER_ND
+        self.password_nd = PASSWORD_ND
+        self.music_library_path = MUSIC_LIBRARY_PATH
+        self.target_comment = TARGET_COMMENT
+        self.lastfm_target_comment = LASTFM_TARGET_COMMENT
 
     def _get_navidrome_auth_params(self):
         """Generates authentication parameters for Navidrome."""
@@ -99,25 +100,24 @@ class NavidromeAPI:
         Attempts to find the actual file path on disk given the Navidrome relative path.
         Uses a much simpler and more reliable approach.
         """
-        # Strategy 1: Try the path as-is first (this works for most cases)
+        # First strat : path as-is first (works for most cases)
         expected_full_path = os.path.join(self.music_library_path, navidrome_relative_path)
         if os.path.exists(expected_full_path):
             return expected_full_path
 
-        # Strategy 2: If we have song details, try reconstructing from metadata
+        # Second strat : reconstructing song details from metadata
         if song_details:
             artist = song_details.get('artist', '')
             album = song_details.get('album', '')
             title = song_details.get('title', '')
 
             if artist and album and title:
-                # Try to find the file by reconstructing the path from metadata
                 reconstructed_path = os.path.join(artist, album, f"{title}.mp3")
                 reconstructed_full_path = os.path.join(self.music_library_path, reconstructed_path)
                 if os.path.exists(reconstructed_full_path):
                     return reconstructed_full_path
 
-                # Also try with track number if available
+                # Trying with track number
                 track = song_details.get('track', '')
                 if track:
                     reconstructed_path_with_track = os.path.join(artist, album, f"{track} - {title}.mp3")
@@ -125,7 +125,7 @@ class NavidromeAPI:
                     if os.path.exists(reconstructed_full_path_with_track):
                         return reconstructed_full_path_with_track
 
-        # Strategy 3: Fallback to more complex logic only if needed
+        # Third strat : more complex logic function if needed
         return self._find_actual_song_path_fallback(navidrome_relative_path)
 
     def _find_actual_song_path_fallback(self, navidrome_relative_path):
@@ -133,7 +133,7 @@ class NavidromeAPI:
         Fallback method using the original complex path resolution logic.
         Only used when the cleaner approach fails.
         """
-        # Try common variations
+        # Common variations
         modified_relative_path_1 = navidrome_relative_path.replace(" - ", " ")
         full_path_1 = os.path.join(self.music_library_path, modified_relative_path_1)
         if os.path.exists(full_path_1):
@@ -144,7 +144,7 @@ class NavidromeAPI:
         if os.path.exists(full_path_2):
             return full_path_2
 
-        # Try removing track number prefix (e.g., "03 - Porcelain.mp3" -> "Porcelain.mp3")
+        # Removing track number prefix
         import re
         track_number_pattern = r'^\d{1,2}\s*-\s*(.+)$'
         match = re.match(track_number_pattern, os.path.basename(navidrome_relative_path))
@@ -155,10 +155,10 @@ class NavidromeAPI:
             if os.path.exists(full_path_3):
                 return full_path_3
 
-        # Try with different separators in path
+        # Different separators in path
         path_parts = navidrome_relative_path.split('/')
         if len(path_parts) >= 2:
-            # Try with just artist/album/filename (no track number)
+            # Just artist/album/filename (w/o track number)
             filename = os.path.basename(navidrome_relative_path)
             match = re.match(track_number_pattern, filename)
             if match:
@@ -168,32 +168,28 @@ class NavidromeAPI:
                 if os.path.exists(full_path_4):
                     return full_path_4
 
-        # Additional case-insensitive and case variations
-        # Try case-insensitive matching for each path part
+        # Additional case variations
         if len(path_parts) >= 2:
-            # Try case-insensitive artist name matching
+            # Case-insensitive artist name matching
             artist_lower = path_parts[0].lower()
             album_lower = path_parts[1].lower()
 
-            # Look for directories that match case-insensitively
+            # Directories that match case-insensitively
             try:
                 for root_dir in os.listdir(self.music_library_path):
                     if root_dir.lower() == artist_lower:
-                        # Found matching artist directory (case-insensitive)
-                        artist_actual = root_dir  # Keep original case
+                        artist_actual = root_dir
 
-                        # Now look for album directory
+                        # Now album directory
                         artist_path = os.path.join(self.music_library_path, artist_actual)
                         if os.path.isdir(artist_path):
                             for album_dir in os.listdir(artist_path):
                                 if album_dir.lower() == album_lower:
-                                    # Found matching album directory
-                                    album_actual = album_dir  # Keep original case
+                                    album_actual = album_dir
 
-                                    # Now try to find the file
                                     album_path = os.path.join(artist_path, album_actual)
 
-                                    # Try with and without track number
+                                    # W/ & w/o track number
                                     filename = os.path.basename(navidrome_relative_path)
                                     match = re.match(track_number_pattern, filename)
                                     if match:
@@ -202,19 +198,18 @@ class NavidromeAPI:
                                         if os.path.exists(file_without_number):
                                             return file_without_number
 
-                                    # Also try the original filename
+                                    # Original filename
                                     file_with_path = os.path.join(album_path, filename)
                                     if os.path.exists(file_with_path):
                                         return file_with_path
             except OSError:
                 pass
 
-        # Try handling underscore variations in artist names
-        # Navidrome might store "Artist_Feat" but actual folder is "Artist"
+        # Handling underscore variations in artist names
         if len(path_parts) >= 2:
             artist_part = path_parts[0]
             
-            # Try removing everything after underscore (e.g., "Disco Lines_Tinashe" -> "Disco Lines")
+            # Removing everything after underscore
             if '_' in artist_part:
                 base_artist = artist_part.split('_')[0]
                 modified_path = os.path.join(base_artist, *path_parts[1:])
@@ -222,7 +217,7 @@ class NavidromeAPI:
                 if os.path.exists(full_path):
                     return full_path
                 
-                # Try with the modified path and track number removal
+                # Modified path + track number removal
                 filename = os.path.basename(modified_path)
                 match = re.match(track_number_pattern, filename)
                 if match:
@@ -258,12 +253,12 @@ class NavidromeAPI:
             # Check if song has a recommendation comment - first from Navidrome API
             api_comment = song_details.get('comment', '')
 
-            # Also check the actual file's ID3 tags for comment using mutagen
+            # Check tags for target comment using mutagen
             actual_comment = ""
             try:
                 from mutagen.id3 import ID3, COMM, ID3NoHeaderError
 
-                # Only process MP3 files with mutagen (ID3 tags are MP3-specific)
+                # ID3 tags for mutagen are MP3-specific
                 if song_path.lower().endswith('.mp3'):
                     audio = ID3(song_path)
 
@@ -293,8 +288,7 @@ class NavidromeAPI:
                                 actual_comment = desc_value
                                 break
 
-                    # If we still don't have a comment, try direct access to specific COMM frames
-                    # including language-specific ones like COMM::eng, COMM::fra, etc.
+                    # Direct access to specific COMM frames if no comment found
                     if not actual_comment:
                         for key in audio.keys():
                             if key.startswith('COMM'):
@@ -310,7 +304,7 @@ class NavidromeAPI:
                                         if text_value_str:
                                             actual_comment = text_value_str
                                             break
-                                # Also check description field for language-specific frames
+                                # Check description field for language-specific frames
                                 elif hasattr(frame, 'desc') and frame.desc:
                                     desc_value = str(frame.desc).strip()
                                     if desc_value:
@@ -332,8 +326,8 @@ class NavidromeAPI:
             if has_recommendation_comment and song_path:
                 user_rating = song_details.get('userRating', 0)
                 
-                # Process ListenBrainz recommendations
-                if song_comment == self.target_comment and self.config_manager.get("LISTENBRAINZ_ENABLED"):
+                # ListenBrainz recommendations
+                if song_comment == self.target_comment and LISTENBRAINZ_ENABLED:
                     if user_rating >= 4:
                         self._update_song_comment(song_path, "")
                     elif user_rating <= 3:
@@ -352,8 +346,8 @@ class NavidromeAPI:
                         if 'musicBrainzId' in song_details and song_details['musicBrainzId'] and user_rating == 1 and listenbrainz_api:
                             listenbrainz_api.submit_feedback(song_details['musicBrainzId'], 1)
 
-                # Process Last.fm recommendations
-                elif song_comment == self.lastfm_target_comment and self.config_manager.get("LASTFM_ENABLED"):
+                # Last.fm recommendations
+                elif song_comment == self.lastfm_target_comment and LASTFM_ENABLED:
                     if user_rating >= 4:
                         self._update_song_comment(song_path, "")
                     elif user_rating <= 3:
@@ -370,8 +364,8 @@ class NavidromeAPI:
                             if self._delete_song(song_path):
                                 deleted_songs.append(f"{song_details['artist']} - {song_details['title']}")
                 
-                # If no specific service is enabled, just delete the commented songs
-                elif not self.config_manager.get("LISTENBRAINZ_ENABLED") and not self.config_manager.get("LASTFM_ENABLED"):
+                # When no specific service is enabled, delete all commented songs
+                elif not LISTENBRAINZ_ENABLED and not LASTFM_ENABLED:
                     if os.path.isdir(song_path):
                         all_files_deleted_in_dir = True
                         for root, _, files in os.walk(song_path):
@@ -399,7 +393,7 @@ class NavidromeAPI:
         Organizes music files from a source folder into a destination base folder
         using Artist/Album/filename structure based on metadata.
         """
-        from mutagen.id3 import ID3, COMM, error
+        from mutagen.id3 import ID3, COMM, ID3NoHeaderError
         from utils import sanitize_filename
 
         print(f"\nOrganizing music files from '{source_folder}' to '{destination_base_folder}'...")
@@ -429,22 +423,21 @@ class NavidromeAPI:
                         counter += 1
 
                     os.makedirs(album_folder, exist_ok=True)
-                    os.rename(mp3_file_path, new_file_path)
+                    shutil.move(mp3_file_path, new_file_path)
                     print(f"Moved '{entry.name}' to '{os.path.relpath(new_file_path, destination_base_folder)}'")
-                except error.ID3NoHeaderError:
+                except ID3NoHeaderError:
                     print(f"Skipping '{entry.name}': No ID3 tag found.")
                     unorganized_folder = os.path.join(destination_base_folder, "Unorganized")
                     os.makedirs(unorganized_folder, exist_ok=True)
-                    os.rename(mp3_file_path, os.path.join(unorganized_folder, entry.name))
+                    shutil.move(mp3_file_path, os.path.join(unorganized_folder, entry.name))
                     print(f"Moved '{entry.name}' to 'Unorganized' due to missing ID3 tags.")
                 except Exception as e:
                     print(f"Error organizing '{entry.name}': {e}")
 
-        # Clean up the __artwork subfolder before the temp folder gets deleted
+        # Cleaning up __artwork subfolder before temp folder gets deleted
         artwork_folder = os.path.join(source_folder, "__artwork")
         if os.path.exists(artwork_folder) and os.path.isdir(artwork_folder):
             try:
-                import shutil
                 shutil.rmtree(artwork_folder)
                 print(f"Removed __artwork folder: {artwork_folder}")
             except Exception as e:

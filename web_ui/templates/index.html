@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Re-command UI</title>
+    <style>
+        :root {
+            --primary-color: #4142e0; 
+            --secondary-color: #3fbbda;
+            --accent-color: #80f2ff; 
+            --background-color: #1a1a2e;
+            --card-background: #2e2e4a;
+            --text-color: #e0e0e0;
+            --border-color: #4a4a6a;
+            --success-color: #28a745;
+            --error-color: #dc3545;
+            --info-color: #17a2b8;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 900px;
+            margin: 0 auto;
+            background-color: var(--card-background);
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            animation: fadeIn 0.8s ease-out;
+            position: relative;
+        }
+
+        .settings-gear {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 32px;
+            height: 32px;
+            cursor: pointer;
+            filter: invert(1);
+            opacity: 0.7;
+            transition: all 0.3s ease;
+        }
+
+        .settings-gear:hover {
+            filter: invert(1) sepia(1) saturate(5) hue-rotate(258deg) brightness(1.2);
+            opacity: 1;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .modal-content {
+            background-color: var(--card-background);
+            margin: 10% auto;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            width: 90%;
+            max-width: 500px;
+            position: relative;
+        }
+
+        .close {
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            color: var(--text-color);
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            opacity: 0.7;
+            transition: opacity 0.3s ease;
+        }
+
+        .close:hover {
+            opacity: 1;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        h1 {
+            color: var(--primary-color);
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        h2 {
+            color: var(--secondary-color);
+            margin-top: 25px;
+            margin-bottom: 15px;
+            font-size: 1.8em;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: var(--text-color);
+        }
+
+        input[type="text"] {
+            width: calc(100% - 24px);
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 1em;
+            background-color: #3a3a5a;
+            color: var(--text-color);
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        input[type="text"]:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(106, 13, 173, 0.3);
+            outline: none;
+        }
+
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 600;
+            margin-right: 10px;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        button:hover {
+            background-color: var(--secondary-color);
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        .message {
+            margin-top: 25px;
+            padding: 15px;
+            border-radius: 8px;
+            font-weight: 500;
+            animation: slideIn 0.5s ease-out;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.success {
+            background-color: rgba(40, 167, 69, 0.2);
+            color: var(--success-color);
+            border: 1px solid var(--success-color);
+        }
+        .message.error {
+            background-color: rgba(220, 53, 69, 0.2);
+            color: var(--error-color);
+            border: 1px solid var(--error-color);
+        }
+        .message.info {
+            background-color: rgba(23, 162, 184, 0.2);
+            color: var(--info-color);
+            border: 1px solid var(--info-color);
+        }
+        .message.warning {
+            background-color: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+            border: 1px solid #ffc107;
+        }
+
+        .playlist-section {
+            margin-top: 40px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 30px;
+        }
+
+        .playlist-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 15px;
+        }
+
+        .playlist-toggle {
+            background: none;
+            border: none;
+            color: var(--accent-color);
+            cursor: pointer;
+            font-size: 1.2em;
+            padding: 5px 10px;
+            border-radius: 5px;
+            transition: background-color 0.3s ease;
+        }
+
+        .playlist-toggle:hover {
+            background-color: rgba(255, 193, 7, 0.1);
+        }
+
+        .playlist-content {
+            display: block;
+        }
+
+        .playlist-content.collapsed {
+            display: none;
+        }
+
+        .playlist-status {
+            font-size: 0.9em;
+            color: var(--text-color);
+            margin-left: 10px;
+        }
+
+        .playlist-item {
+            display: flex;
+            align-items: center;
+            background-color: var(--card-background);
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .playlist-item:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .album-art-container {
+            position: relative;
+            width: 60px;
+            height: 60px;
+            min-width: 60px;
+            margin-right: 20px;
+            border-radius: 6px;
+            background-color: #3a3a5a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .album-art {
+            width: 100%;
+            height: 100%;
+            border-radius: 6px;
+            object-fit: cover;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .album-art.loaded {
+            opacity: 1;
+        }
+
+        .album-art-spinner {
+            position: absolute;
+            display: block;
+            width: 24px;
+            height: 24px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        .track-info {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .track-title {
+            font-weight: 700;
+            margin: 0;
+            font-size: 1.1em;
+            color: var(--text-color);
+        }
+
+        .track-artist {
+            margin: 4px 0 2px 0;
+            color: #b0b0b0;
+            font-size: 0.95em;
+        }
+
+        .track-album {
+            margin: 2px 0 0 0;
+            font-style: italic;
+            color: #888;
+            font-size: 0.9em;
+        }
+
+        .logo {
+            width: 100%;
+            height: auto;
+            max-width: 125px;
+            display: block;
+            margin: 0 auto 20px auto;
+            filter: drop-shadow(0 0 5px rgba(0,0,0,0.3));
+        }
+
+        .service-logo {
+            margin: 0 20px 20px 0;
+            max-width: 250px;
+        }
+
+        .settings {
+            background-color: #3a3a5a;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            margin-bottom: 30px;
+            padding: 20px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .settings summary {
+            cursor: pointer;
+            font-weight: bold;
+            color: var(--accent-color);
+            font-size: 1.2em;
+            padding: 5px 0;
+            transition: color 0.3s ease;
+        }
+
+        .settings summary:hover {
+            color: var(--primary-color);
+        }
+
+        .playlist-controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .download-btn {
+            background-color: var(--accent-color) !important;
+            color: black !important;
+        }
+
+        .download-btn:hover {
+            background-color: #8080ff !important;
+        }
+
+        /* Fresh Releases Carousel */
+        .carousel-container {
+            display: flex;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .carousel {
+            display: flex;
+            overflow-x: auto;
+            scroll-behavior: smooth;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+            gap: 20px;
+            padding: 10px 0;
+        }
+
+        .carousel::-webkit-scrollbar {
+            display: none;
+        }
+
+        .carousel-btn {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            z-index: 10;
+        }
+
+        .carousel-btn:hover {
+            background-color: var(--secondary-color);
+            transform: scale(1.1);
+        }
+
+        .prev-btn {
+            margin-right: 10px;
+        }
+
+        .next-btn {
+            margin-left: 10px;
+        }
+
+        .release-item {
+            flex: 0 0 200px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: var(--card-background);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            text-align: center;
+            min-height: 280px;
+        }
+
+        .release-item:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .release-art-container {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            border-radius: 8px;
+            background-color: #3a3a5a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            margin-bottom: 10px;
+        }
+
+        .release-art {
+            width: 100%;
+            height: 100%;
+            border-radius: 8px;
+            object-fit: cover;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .release-art.loaded {
+            opacity: 1;
+        }
+
+        .release-art-spinner {
+            position: absolute;
+            display: block;
+            width: 30px;
+            height: 30px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        .release-info {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            justify-content: space-between;
+            height: 100%;
+        }
+
+        .release-artist {
+            font-weight: bold;
+            font-size: 1em;
+            color: var(--text-color);
+            margin: 0;
+        }
+
+        .release-album {
+            font-weight: normal;
+            font-size: 0.9em;
+            color: var(--text-color);
+            margin: 0;
+        }
+
+        .release-date {
+            font-size: 0.8em;
+            color: #b0b0b0;
+            margin: 0;
+        }
+
+        .release-download-btn {
+            background-color: var(--accent-color);
+            color: black;
+            border: none;
+            border-radius: 5px;
+            padding: 5px 10px;
+            font-size: 0.8em;
+            cursor: pointer;
+            margin-top: 5px;
+            transition: background-color 0.3s ease;
+        }
+
+        .release-download-btn:hover {
+            background-color: #8080ff;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+            }
+            h1 {
+                font-size: 2em;
+            }
+            .playlist-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .album-art {
+                margin-bottom: 10px;
+                margin-right: 0;
+            }
+            .playlist-controls {
+                flex-direction: column;
+            }
+            button {
+                width: 100%;
+                margin-right: 0;
+                margin-bottom: 10px;
+            }
+            .release-item {
+                flex: 0 0 150px;
+            }
+            .release-art {
+                width: 100px;
+                height: 100px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <img src="/assets/gear.svg" alt="Settings" class="settings-gear" onclick="openSettingsModal()">
+        <img src="/assets/logo.svg" alt="Re-command Logo" class="logo">
+        <h1>Re-command Docker UI</h1>
+
+        <div id="message" class="message" style="display: none;"></div>
+
+        <div class="playlist-section">
+            <div class="playlist-header">
+                <h2>Fresh Releases</h2>
+            </div>
+            <div id="freshReleasesPlaylist" class="playlist-content"></div>
+        </div>
+
+        <div class="playlist-section">
+            <div class="playlist-header">
+                <img src="/assets/ListenBrainz_logo.svg" alt="ListenBrainz" class="logo service-logo">
+                <h2></h2>
+                <div>
+                    <span id="listenBrainzStatus" class="playlist-status"></span>
+                    <button id="listenBrainzToggle" class="playlist-toggle" onclick="togglePlaylist('listenBrainz')" style="display: none;">▼</button>
+                </div>
+            </div>
+            <div id="listenBrainzButtons" class="playlist-controls">
+                <button onclick="discoverListenBrainzPlaylist()">Discover Weekly Playlist</button>
+                <button onclick="downloadListenBrainzPlaylistDirect()">Download Weekly Playlist</button>
+            </div>
+            <div id="listenBrainzPlaylist" class="playlist-content"></div>
+        </div>
+
+        <div class="playlist-section">
+            <div class="playlist-header">
+                <img src="/assets/Last.fm_logo.svg" alt="Last.fm" class="logo service-logo">
+                <div>
+                    <span id="lastFmStatus" class="playlist-status"></span>
+                    <button id="lastFmToggle" class="playlist-toggle" onclick="togglePlaylist('lastFm')" style="display: none;">▼</button>
+                </div>
+            </div>
+            <div id="lastFmButtons" class="playlist-controls">
+                <button onclick="discoverLastFmPlaylist()">Discover Weekly Playlist</button>
+                <button onclick="downloadLastFmPlaylistDirect()">Download Weekly Playlist</button>
+            </div>
+            <div id="lastFmPlaylist" class="playlist-content"></div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeSettingsModal()">&times;</span>
+            <h2>Settings</h2>
+
+            <div class="form-group">
+                <label for="arlInput">Deezer ARL:</label>
+                <input type="text" id="arlInput" value="{{ arl }}">
+                <button onclick="updateArl()">Update ARL</button>
+            </div>
+
+            <div class="form-group">
+                <label for="cronInput">Cron Schedule:</label>
+                <small style="color: #b0b0b0; display: block; margin-bottom: 8px;">
+                    Set when the automatic download should run weekly.
+                </small>
+                <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
+                    <select id="cronHour" style="padding: 8px; border-radius: 4px; background-color: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color);">
+                        {% for hour in range(24) %}
+                        <option value="{{ hour }}" {% if hour == cron_hour %}selected{% endif %}>{{ "%02d"|format(hour) }}:00</option>
+                        {% endfor %}
+                    </select>
+                    <select id="cronDay" style="padding: 8px; border-radius: 4px; background-color: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color);">
+                        <option value="0" {% if cron_day == 0 %}selected{% endif %}>Sunday</option>
+                        <option value="1" {% if cron_day == 1 %}selected{% endif %}>Monday</option>
+                        <option value="2" {% if cron_day == 2 %}selected{% endif %}>Tuesday</option>
+                        <option value="3" {% if cron_day == 3 %}selected{% endif %}>Wednesday</option>
+                        <option value="4" {% if cron_day == 4 %}selected{% endif %}>Thursday</option>
+                        <option value="5" {% if cron_day == 5 %}selected{% endif %}>Friday</option>
+                        <option value="6" {% if cron_day == 6 %}selected{% endif %}>Saturday</option>
+                    </select>
+                </div>
+                <input type="hidden" id="cronInput" value="{{ cron_schedule }}">
+                <button onclick="updateCron()">Update Cron</button>
+            </div>
+
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="disableCron" onchange="toggleCronDisable()">
+                    Disable Automatic Downloads
+                </label>
+            </div>
+
+            <div class="form-group">
+                <label>Navidrome Cleanup:</label>
+                <button onclick="triggerNavidromeCleanup()">Remove Tagged Songs</button>
+                <small style="color: #b0b0b0; display: block; margin-top: 5px;">
+                    Manually remove songs tagged with recommendation comments from Navidrome
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function openSettingsModal() {
+            document.getElementById('settingsModal').style.display = 'block';
+        }
+
+        function closeSettingsModal() {
+            document.getElementById('settingsModal').style.display = 'none';
+        }
+
+        // Close modal when clicking outside of it
+        window.onclick = function(event) {
+            const modal = document.getElementById('settingsModal');
+            if (event.target == modal) {
+                modal.style.display = 'none';
+            }
+        }
+
+        function togglePlaylist(service) {
+            const contentDiv = document.getElementById(`${service}Playlist`);
+            const toggleBtn = document.getElementById(`${service}Toggle`);
+            if (contentDiv.classList.contains('collapsed')) {
+                contentDiv.classList.remove('collapsed');
+                toggleBtn.textContent = '▼';
+            } else {
+                contentDiv.classList.add('collapsed');
+                toggleBtn.textContent = '▶';
+            }
+        }
+
+        async function triggerNavidromeCleanup() {
+            const response = await fetch('/api/trigger_navidrome_cleanup', {
+                method: 'POST'
+            });
+            const data = await response.json();
+            showMessage(data.status, data.message);
+        }
+
+        function showMessage(type, text) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.className = `message ${type}`;
+            messageDiv.innerText = text;
+            messageDiv.style.display = 'block';
+            setTimeout(() => {
+                messageDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        async function updateArl() {
+            const arl = document.getElementById('arlInput').value;
+            const response = await fetch('/api/update_arl', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ arl: arl })
+            });
+            const data = await response.json();
+            showMessage(data.status, data.message);
+        }
+
+        async function updateCron() {
+            const hour = document.getElementById('cronHour').value;
+            const day = document.getElementById('cronDay').value;
+            // Build cron schedule: "0 HOUR * * DAY" (runs at specified hour on specified day every week)
+            const schedule = `0 ${hour} * * ${day}`;
+            const response = await fetch('/api/update_cron', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ schedule: schedule })
+            });
+            const data = await response.json();
+            showMessage(data.status, data.message);
+        }
+
+        async function toggleCronDisable() {
+            const disabled = document.getElementById('disableCron').checked;
+            const response = await fetch('/api/toggle_cron', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ disabled: disabled })
+            });
+            const data = await response.json();
+            showMessage(data.status, data.message);
+        }
+
+        async function discoverListenBrainzPlaylist() {
+            await getListenBrainzPlaylist(true);
+        }
+
+        async function refetchListenBrainzPlaylist() {
+            await getListenBrainzPlaylist(false);
+        }
+
+        async function getListenBrainzPlaylist(isDiscover = false) {
+            const playlistDiv = document.getElementById('listenBrainzPlaylist');
+            const statusDiv = document.getElementById('listenBrainzStatus');
+            const toggleBtn = document.getElementById('listenBrainzToggle');
+            playlistDiv.innerHTML = '<div class="spinner"></div>Loading...';
+            statusDiv.textContent = '';
+            toggleBtn.style.display = 'none';
+            try {
+                const response = await fetch('/api/get_listenbrainz_playlist');
+                const text = await response.text();
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch (jsonError) {
+                    playlistDiv.innerHTML = `<div class="playlist-item">Error: ${response.status} ${response.statusText}<br><pre>${text}</pre></div>`;
+                    statusDiv.textContent = 'Error loading playlist';
+                    showMessage('error', `API returned non-JSON response: ${response.status}`);
+                    return;
+                }
+                if (data.status === 'success' && data.recommendations.length > 0) {
+                    playlistDiv.innerHTML = data.recommendations.map((song, index) => {
+                        return `<div class="playlist-item">
+                            <div class="album-art-container">
+                                <img src="/assets/default-album.svg" alt="Album Art" class="album-art" id="lb-album-art-${index}" data-artist="${song.artist}" data-title="${song.title}">
+                                <div class="album-art-spinner"></div>
+                            </div>
+                            <div class="track-info">
+                                <div class="track-title">${song.title}</div>
+                                <div class="track-artist">${song.artist}</div>
+                                <div class="track-album">${song.album}</div>
+                            </div>
+                        </div>`;
+                    }).join('');
+                    data.recommendations.forEach((song, index) => {
+                        loadAlbumArt(`lb-album-art-${index}`, song.artist, song.title);
+                    });
+                    if (isDiscover) {
+                        document.getElementById('listenBrainzButtons').innerHTML = '<button class="download-btn" id="listenBrainzDownloadBtn" onclick="downloadListenBrainzPlaylist()">Download</button><button onclick="refetchListenBrainzPlaylist()">Refetch</button>';
+                    }
+                    statusDiv.textContent = `${data.recommendations.length} songs fetched from ListenBrainz`;
+                    toggleBtn.style.display = 'inline-block';
+                    showMessage('info', `Found ${data.recommendations.length} ListenBrainz recommendations.`);
+                } else {
+                    playlistDiv.innerHTML = `<div class="playlist-item">${data.message}</div>`;
+                    statusDiv.textContent = 'No recommendations found';
+                    showMessage(data.status, data.message);
+                }
+            } catch (error) {
+                playlistDiv.innerHTML = `<div class="playlist-item">Network error: ${error.message}</div>`;
+                statusDiv.textContent = 'Network error';
+                showMessage('error', `Network error: ${error.message}`);
+            }
+        }
+
+        async function downloadListenBrainzPlaylistDirect() {
+            const response = await fetch('/api/trigger_listenbrainz_download', {
+                method: 'POST'
+            });
+            const data = await response.json();
+            showMessage(data.status, data.message);
+        }
+
+        async function downloadListenBrainzPlaylist() {
+            const downloadBtn = document.getElementById('listenBrainzDownloadBtn');
+            downloadBtn.innerHTML = '<div class="spinner"></div>Downloading...';
+            downloadBtn.disabled = true;
+            const response = await fetch('/api/trigger_listenbrainz_download', {
+                method: 'POST'
+            });
+            const data = await response.json();
+            setTimeout(() => {
+                downloadBtn.innerHTML = 'Download';
+                downloadBtn.disabled = false;
+                showMessage(data.status, data.message);
+            }, 2000);
+        }
+
+        async function discoverLastFmPlaylist() {
+            await getLastFmPlaylist(true);
+        }
+
+        async function refetchLastFmPlaylist() {
+            await getLastFmPlaylist(false);
+        }
+
+        async function getLastFmPlaylist(isDiscover = false) {
+            const playlistDiv = document.getElementById('lastFmPlaylist');
+            const statusDiv = document.getElementById('lastFmStatus');
+            const toggleBtn = document.getElementById('lastFmToggle');
+            playlistDiv.innerHTML = '<div class="spinner"></div>Loading...';
+            statusDiv.textContent = '';
+            toggleBtn.style.display = 'none';
+            try {
+                const response = await fetch('/api/get_lastfm_playlist');
+                const data = await response.json();
+                if (data.status === 'success' && data.recommendations.length > 0) {
+                    playlistDiv.innerHTML = data.recommendations.map((song, index) =>
+                        `<div class="playlist-item">
+                            <div class="album-art-container">
+                                <img src="/assets/default-album.svg" alt="Album Art" class="album-art" id="lf-album-art-${index}" data-artist="${song.artist}" data-title="${song.title}">
+                                <div class="album-art-spinner"></div>
+                            </div>
+                            <div class="track-info">
+                                <div class="track-title">${song.title}</div>
+                                <div class="track-artist">${song.artist}</div>
+                                <div class="track-album">${song.album}</div>
+                            </div>
+                        </div>`
+                    ).join('');
+                    data.recommendations.forEach((song, index) => {
+                        loadAlbumArt(`lf-album-art-${index}`, song.artist, song.title);
+                    });
+                    if (isDiscover) {
+                        document.getElementById('lastFmButtons').innerHTML = '<button class="download-btn" id="lastFmDownloadBtn" onclick="downloadLastFmPlaylist()">Download</button><button onclick="refetchLastFmPlaylist()">Refetch</button>';
+                    }
+                    statusDiv.textContent = `${data.recommendations.length} songs fetched from Last.fm`;
+                    toggleBtn.style.display = 'inline-block';
+                    showMessage('info', `Found ${data.recommendations.length} Last.fm recommendations.`);
+                } else {
+                    playlistDiv.innerHTML = `<div class="playlist-item">${data.message}</div>`;
+                    statusDiv.textContent = 'No recommendations found';
+                    showMessage(data.status, data.message);
+                }
+            } catch (error) {
+                playlistDiv.innerHTML = `<div class="playlist-item">Network error: ${error.message}</div>`;
+                statusDiv.textContent = 'Network error';
+                showMessage('error', `Network error: ${error.message}`);
+            }
+        }
+
+        async function downloadLastFmPlaylistDirect() {
+            const response = await fetch('/api/trigger_lastfm_download', {
+                method: 'POST'
+            });
+            const data = await response.json();
+            showMessage(data.status, data.message);
+        }
+
+        async function downloadLastFmPlaylist() {
+            const downloadBtn = document.getElementById('lastFmDownloadBtn');
+            downloadBtn.innerHTML = '<div class="spinner"></div>Downloading...';
+            downloadBtn.disabled = true;
+            const response = await fetch('/api/trigger_lastfm_download', {
+                method: 'POST'
+            });
+            const data = await response.json();
+            setTimeout(() => {
+                downloadBtn.innerHTML = 'Download';
+                downloadBtn.disabled = false;
+                showMessage(data.status, data.message);
+            }, 2000);
+        }
+
+        async function downloadFreshRelease(artist, album, releaseDate) {
+            const response = await fetch('/api/trigger_fresh_release_download', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ artist: artist, album: album, release_date: releaseDate })
+            });
+            const data = await response.json();
+            showMessage(data.status, data.message);
+        }
+
+        async function fetchFreshReleases() {
+            const playlistDiv = document.getElementById('freshReleasesPlaylist');
+            playlistDiv.innerHTML = '<div class="spinner"></div>Loading...';
+            try {
+                const response = await fetch('/api/get_fresh_releases');
+                const text = await response.text();
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch (jsonError) {
+                    playlistDiv.innerHTML = `<div class="playlist-item">Error: ${response.status} ${response.statusText}<br><pre>${text}</pre></div>`;
+                    showMessage('error', `API returned non-JSON response for fresh releases: ${response.status}`);
+                    return;
+                }
+
+                if (data.status === 'success' && data.releases.length > 0) {
+                    playlistDiv.innerHTML = `
+                        <div class="carousel-container">
+                            <button class="carousel-btn prev-btn" onclick="scrollCarousel('freshReleases', -1)"><</button>
+                            <div class="carousel" id="freshReleasesCarousel">
+                                ${data.releases.map((release, index) =>
+                                    `<div class="release-item">
+                                        <div class="release-art-container">
+                                            <img src="/assets/default-album.svg" alt="Album Art" class="release-art" id="fr-album-art-${index}" data-artist="${release.artist_credit_name}" data-title="${release.release_name}" data-mbid="${release.caa_release_mbid || release.release_mbid}">
+                                            <div class="release-art-spinner"></div>
+                                        </div>
+                                        <div class="release-info">
+                                            <div class="release-artist">${release.artist_credit_name}</div>
+                                            <div class="release-album">${release.release_name}</div>
+                                            <div class="release-date">${release.release_date}</div>
+                                            <button class="release-download-btn" onclick="downloadFreshRelease('${release.artist_credit_name.replace(/'/g, "\\'")}', '${release.release_name.replace(/'/g, "\\'")}', '${release.release_date || ''}')">Download</button>
+                                        </div>
+                                    </div>`
+                                ).join('')}
+                            </div>
+                            <button class="carousel-btn next-btn" onclick="scrollCarousel('freshReleases', 1)">></button>
+                        </div>
+                    `;
+                    data.releases.forEach((release, index) => {
+                        setTimeout(() => loadAlbumArt(`fr-album-art-${index}`, release.artist_credit_name, release.release_name), index * 200);
+                    });
+                } else {
+                    playlistDiv.innerHTML = `<div class="playlist-item">${data.message}</div>`;
+                    showMessage(data.status, data.message);
+                }
+            } catch (error) {
+                playlistDiv.innerHTML = `<div class="playlist-item">Network error: ${error.message}</div>`;
+                showMessage('error', `Network error fetching fresh releases: ${error.message}`);
+            }
+        }
+
+        function scrollCarousel(service, direction) {
+            const carousel = document.getElementById(`${service}Carousel`);
+            const scrollAmount = 220;
+            const currentScroll = carousel.scrollLeft;
+            const newScroll = currentScroll + (direction * scrollAmount);
+            carousel.scrollTo({
+                left: newScroll,
+                behavior: 'smooth'
+            });
+        }
+
+        async function loadAlbumArt(imgId, artist, title) {
+            const imgElement = document.getElementById(imgId);
+            if (!imgElement) return;
+
+            const spinner = imgElement.nextElementSibling;
+            const mbid = imgElement.dataset.mbid || '';
+
+            try {
+                const response = await fetch(`/api/get_album_art?artist=${encodeURIComponent(artist)}&title=${encodeURIComponent(title)}&mbid=${encodeURIComponent(mbid)}`);
+                const data = await response.json();
+                if (data.status === 'success' && data.album_art_url) {
+                    imgElement.src = data.album_art_url;
+                    imgElement.onload = () => {
+                        imgElement.classList.add('loaded');
+                        if (spinner) spinner.style.display = 'none';
+                    };
+                    imgElement.onerror = () => {
+                        imgElement.src = '/assets/default-album.svg';
+                        imgElement.classList.add('loaded');
+                        if (spinner) spinner.style.display = 'none';
+                    };
+                } else {
+                    imgElement.src = '/assets/default-album.svg';
+                    imgElement.classList.add('loaded');
+                    if (spinner) spinner.style.display = 'none';
+                }
+            } catch (error) {
+                console.error(`Error fetching album art for ${artist} - ${title}:`, error);
+                imgElement.src = '/assets/default-album.svg';
+                imgElement.classList.add('loaded');
+                if (spinner) spinner.style.display = 'none';
+            }
+        }
+
+        // Auto-load fresh releases on page load
+        window.onload = function() {
+            fetchFreshReleases();
+        };
+    </script>
+</body>
+</html>

@@ -1,172 +1,275 @@
-
 # re-command: Automated Music Recommendation System for Navidrome
 
-`re-command` is a modern, async Python-based tool designed to enhance your Navidrome music experience by automatically downloading music recommendations from [ListenBrainz](https://listenbrainz.org) and [Last.fm](https://www.last.fm) using [Deemix](https://deemix.org/) and [Streamrip](https://github.com/nathom/streamrip). It acts as your behind-the-scenes music curator, downloading, tagging, organizing, and importing recommended tracks, while also cleaning up your library based on your ratings.
+![Re-command Logo](web_ui/assets/logo.svg)
+
+`re-command` is a modern, containerized music recommendation and automation system that enhances your Navidrome music experience. It automatically discovers and downloads music recommendations from [ListenBrainz](https://listenbrainz.org) and [Last.fm](https://www.last.fm) using [Streamrip](https://github.com/nathom/streamrip) or [Deemix](https://deemix.org/), then organizes and tags them in your music library.
 
 ## Key Features
 
-*   **Multi-Source Recommendations:** Fetches recommendations from both ListenBrainz and Last.fm, with intelligent duplicate detection and removal.
-*   **Dual Download Methods:** Supports both Deemix and Streamrip v2 for downloading tracks from Deezer, providing flexibility and reliability.
-*   **Intelligent Metadata Tagging:** Automatically tags downloaded tracks with comprehensive metadata including artist, title, album, release date, and MusicBrainz ID (when available) using kid3-cli.
-*   **Dynamic Playlist Support:** Downloaded tracks are tagged with configurable comment markers, enabling you to create dynamic playlists in Navidrome or other compatible music players.
-*   **Automated Library Maintenance:** Removes tracks from previous recommendations based on your Navidrome ratings (3 stars or lower, including unrated tracks), keeping your library filled with music you enjoy.
-*   **ListenBrainz Feedback Integration:** Automatically submits negative feedback to ListenBrainz for 1-star rated tracks, helping improve future recommendations.
-*   **Progress Visualization:** Real-time progress bars provide feedback on library processing and track downloads.
-*   **Directory Cleanup:** Automatically removes empty folders within your music library, maintaining a tidy and organized structure.
-*   **Interactive Setup:** Guided first-time setup process with automatic configuration file generation.
-*   **Modular Architecture:** Clean, maintainable code structure with separate API classes for each service.
+*   **Multi-Source Recommendations:** Fetches music recommendations playlists from both ListenBrainz and Last.fm. Includes a built-in cron scheduling for weekly automated downloads
+*   **Dual Download Methods:** Supports both modern Streamrip v2 and legacy Deemix for downloading from Deezer
+*   **Fresh Releases Discovery:** Automatically shows newly released albums from ListenBrainz with a quick download button
+*   **Modern Web Interface:** Clean, responsive web UI for configuration, monitoring, and manual controls
+*   **Dynamic Playlist Support:** Downloaded tracks are tagged with configurable comment markers for dynamic playlists
+*   **Automated Library Maintenance:** Removes tracks from previous recommendations based on your Navidrome ratings
+*   **Containerized Deployment:** Full Docker support with automated setup and configuration
 
-## Prerequisites
+![Screenshot](web_ui/assets/Screenshot.jpg)
 
-*   **Python 3.7+**
-*   **Required Python Libraries:**
-    ```bash
-    pip install requests tqdm pylast deemix streamrip mutagen
-    ```
-    or simply:
-    ```bash
-    pip install -r requirements.txt
-    ```
-*   **External Tools:**
-    *   `kid3-cli` (for audio file tagging)
+## Quick Start with Docker
 
-    Installation examples (may vary depending on your OS):
-    ```bash
-    # Debian/Ubuntu
-    sudo apt install kid3-cli
-    # Arch Linux
-    yay -S kid3-common
-    # macOS
-    brew install kid3
-    # Fedora/CentOS
-    sudo dnf install kid3-cli
-    ```
-*   **Navidrome Server:** A running Navidrome instance (v0.49.0 or later recommended)
-*   **ListenBrainz Account (Optional):** A ListenBrainz user account for music recommendations
-*   **Last.fm Account (Optional):** A Last.fm user account for enhanced music discovery
-*   **Deezer Account (Free or Premium) & ARL Token:** Your Deezer ARL token for downloading tracks. You can find it in your browser's developer tools under "Application" > "Cookies" after logging into Deezer. Free accounts are limited to 128 kbps MP3 quality.
+### Prerequisites
 
-## Setup
+- [Docker](https://www.docker.com/get-started) installed
+- A running [Navidrome](https://www.navidrome.org/) instance
+- [Deezer](https://www.deezer.com/) account with ARL token
+- A [ListenBrainz](https://listenbrainz.org/) and/or [Last.fm](https://www.last.fm/) account (I recommend both !)
 
-1. **Clone the Repository:**
-    ```bash
-    git clone <repository_url>
-    cd <repository_directory>
-    ```
+### 1. Get Your Deezer ARL Token
 
-2. **Install requirements:**
-    ```bash
-    pip install -r requirements.txt
-    ```
+1. Log into [Deezer](https://www.deezer.com/) (free accounts supported)
+2. Open browser Developer Tools (F12)
+3. Go to Application → Cookies
+4. Copy the `arl` cookie value
 
-3. **Configuration:**
+### 2. Run the Container
 
-    *   **First-time setup:** Run the script once (`python3 re-command.py`). It will detect that `config.py` is missing and guide you through an interactive setup process to create it.
+Enter the repo:
+```bash
+cd re-command
+```
+Launch the docker run script:
+```bash
+chmod +X docker/run-re-command.sh
+sh docker/run-re-command.sh
+```
+Then, simply enter all the required info about your navidrome instance, Deezer arl, API keys for ListenBrainz and Last.fm, music download location, etc.
 
-    *   **Manual Configuration (Optional):** If you prefer, you can create `config.py` manually. Use the following template:
+### 3. Access the Web Interface
 
-        ```python
-        # Navidrome API Configuration
-        ROOT_ND = 'http://your-navidrome-server:4533'      # Replace with your Navidrome URL
-        USER_ND = 'your_navidrome_username'                # Your Navidrome username
-        PASSWORD_ND = 'your_navidrome_password'             # Your Navidrome password
-        MUSIC_LIBRARY_PATH = "/path/to/your/music/library" # Full path to your music library
-        TEMP_DOWNLOAD_FOLDER = "/path/to/temp/downloads"    # Temporary folder for downloads
+Open your browser and go to `http://localhost:5000` to access the web interface.
 
-        # ListenBrainz API Configuration (Optional)
-        ROOT_LB = 'https://api.listenbrainz.org'            # ListenBrainz API base URL (leave as is)
-        TOKEN_LB = 'your_listenbrainz_token'                # Your ListenBrainz API token
-        USER_LB = "your_listenbrainz_username"              # Your ListenBrainz username
-        LISTENBRAINZ_ENABLED = True                         # Enable/disable ListenBrainz integration
+### 4. Create a Dynamic Playlist
+In your music player or directly in Navidrome, create a playlist that includes *Comment is lb_recommendation* AND *Comment is lastfm_recommendation*. Or do a separate playlist for each. Adding another filter *Rating < 1* is quite convenient as well to get rid of the tracks you don't like.
 
-        # Last.fm API Configuration (Optional)
-        LASTFM_ENABLED = True                               # Enable/disable Last.fm integration
-        LASTFM_API_KEY = "your_lastfm_api_key"              # Your Last.fm API key
-        LASTFM_API_SECRET = "your_lastfm_api_secret"        # Your Last.fm API secret
-        LASTFM_USERNAME = "your_lastfm_username"            # Your Last.fm username
-        LASTFM_SESSION_KEY = "your_lastfm_session_key"      # Your Last.fm session key (more secure)
+## Local Development Setup (non-dockerized)
 
-        # Deezer Configuration (Required for downloads)
-        DEEZER_ARL = "your_deezer_arl_token"                # Your Deezer ARL token for downloading
+### Prerequisites
 
-        # Download Method (choose one)
-        DOWNLOAD_METHOD = "streamrip"                       # Use "streamrip" (recommended) or "deemix"
+- Python 3.11+
+- Git
+- Navidrome server (local or remote)
+- Deezer ARL token
 
-        # Comment Tags for Playlist Creation
-        TARGET_COMMENT = "lb_recommendation"                # Comment tag for ListenBrainz tracks
-        LASTFM_TARGET_COMMENT = "lastfm_recommendation"     # Comment tag for Last.fm tracks
+### 1. Clone the Repository
 
-        # History Tracking
-        PLAYLIST_HISTORY_FILE = "playlist_history.txt"      # File to track processed playlists
-        ```
+```bash
+git clone <repository_url>
+cd re-command
+```
 
-## Usage
+### 2. Install Dependencies
 
-1. **Make the script executable:**
-    ```bash
-    chmod +x re-command.py
-    ```
+```bash
+pip install -r requirements.txt
+```
 
-2. **Run the script:**
-    ```bash
-    python3 re-command.py
-    ```
-    **Note:** You may need to be root or part of the `opc` user group to get required permissions for editing the Navidrome music folder.
+### 3. Configure Environment
 
-    The script will perform the following actions:
-    *   Parse your Navidrome library, removing previously recommended tracks that you've rated 3 stars or below (including unrated tracks).
-    *   Clean up any empty directories in your music library.
-    *   Submit negative feedback to ListenBrainz for tracks you've rated 1 star.
-    *   Check for new recommendations from enabled services (ListenBrainz and/or Last.fm).
-    *   Display found recommendations with source attribution.
-    *   Download new tracks using your configured method (Deemix or Streamrip) to a temporary folder.
-    *   Automatically tag downloaded tracks with comprehensive metadata using kid3-cli.
-    *   Organize tracks into your music library using Artist/Album/Title structure.
-    *   Display a summary of successfully downloaded tracks.
+Edit the configuration file:
 
-3. **Choose your download method:**
-    - **Streamrip** (recommended): Modern async downloader with better performance
-    - **Deemix**: Legacy downloader, alternative option if Streamrip has issues
+```bash
+nano config.py
+```
 
-**Automation with `cron` (Recommended):**
+### 4. Run the Application
 
-To run `re-command` automatically on a weekly schedule (e.g., every Monday at 11 PM), you can add a cron job:
+**Command Line Interface:**
+```bash
+python re-command.py
+```
 
-1. Edit your crontab:
-    ```bash
-    crontab -e
-    ```
+**Web Interface:**
+```bash
+python web_ui/app.py
+```
 
-2. Add the following line (adjust the path and time as needed):
-    ```
-    0 23 * * 1 /usr/bin/python3 /path/to/re-command.py >> /path/to/re-command.log 2>&1
-    ```
-3. Add your user to the opc user group (otherwise it will not be able to manage the navidrome library):
-   ```
-   sudo usermod -a -G opc yourusername
-   ```
+Then open `http://localhost:5000` in your browser.
 
-**Dynamic Playlist Tip:**
+## Configuration
 
-In your music player, create a dynamic playlist that filters for tracks with the comment tag you set in `config.py` (e.g., "lb-recommendation" or "lastfm_recommendation"). This playlist will automatically update with your latest recommendations.
+### Environment Variables (Docker)
 
-## Known Issues
-*   **Positive ListenBrainz Feedback:** Positive feedback submission to ListenBrainz is not working at all times yet (still in debugging)
-*   **Last.fm Album Information:** Due to Last.fm API limitations, album folders for Last.fm downloads may be "UNKNOWN ALBUM" and the downloads may not exactly match the ones on your Last.fm recommendations page (but are usually very close matches)
-*   **kid3-cli Dependency:** The script requires kid3-cli for metadata tagging. Ensure it's properly installed and accessible in your PATH
+| Variable | Description | Required | Default |
+|----------|-------------|----------|---------|
+| `RECOMMAND_ROOT_ND` | Navidrome server URL | Yes | - |
+| `RECOMMAND_USER_ND` | Navidrome username | Yes | - |
+| `RECOMMAND_PASSWORD_ND` | Navidrome password | Yes | - |
+| `RECOMMAND_DEEZER_ARL` | Deezer ARL token | Yes | - |
+| `RECOMMAND_LISTENBRAINZ_ENABLED` | Enable ListenBrainz | No | `false` |
+| `RECOMMAND_TOKEN_LB` | ListenBrainz API token | No | - |
+| `RECOMMAND_USER_LB` | ListenBrainz username | No | - |
+| `RECOMMAND_LASTFM_ENABLED` | Enable Last.fm | No | `false` |
+| `RECOMMAND_LASTFM_API_KEY` | Last.fm API key | No | - |
+| `RECOMMAND_LASTFM_API_SECRET` | Last.fm API secret | No | - |
+| `RECOMMAND_LASTFM_USERNAME` | Last.fm username | No | - |
 
-## Recent Improvements
-*   **Async Architecture:** Complete rewrite using async/await for better performance and reliability
-*   **Streamrip v2 Support:** Added support for the modern Streamrip v2 API as the recommended download method
-*   **Enhanced Error Handling:** Improved error handling and logging throughout the application
-*   **Better Path Resolution:** More robust file path resolution for organizing music in Navidrome libraries
-*   **Modular Design:** Refactored into separate API classes for better maintainability
+### Configuration File (Local)
+
+```python
+# Navidrome Configuration
+ROOT_ND = "http://your-navidrome-server:4533"
+USER_ND = "your_username"
+PASSWORD_ND = "your_password"
+MUSIC_LIBRARY_PATH = "/path/to/music"
+TEMP_DOWNLOAD_FOLDER = "/path/to/temp"
+
+# ListenBrainz Configuration
+LISTENBRAINZ_ENABLED = True
+TOKEN_LB = "your_token"
+USER_LB = "your_username"
+
+# Last.fm Configuration
+LASTFM_ENABLED = True
+LASTFM_API_KEY = "your_key"
+LASTFM_API_SECRET = "your_secret"
+LASTFM_USERNAME = "your_username"
+
+# Deezer Configuration
+DEEZER_ARL = "your_arl_token"
+
+# Download Method
+DOWNLOAD_METHOD = "streamrip"  # or "deemix"
+```
+### API Endpoints
+
+The web interface exposes RESTful APIs:
+
+- `GET /api/config` - Get current configuration
+- `POST /api/update_arl` - Update Deezer ARL token
+- `POST /api/update_cron` - Update scheduling
+- `GET /api/get_listenbrainz_playlist` - Get ListenBrainz recommendations
+- `POST /api/trigger_listenbrainz_download` - Trigger ListenBrainz download
+- `GET /api/get_lastfm_playlist` - Get Last.fm recommendations
+- `POST /api/trigger_lastfm_download` - Trigger Last.fm download
+- `GET /api/get_fresh_releases` - Get fresh releases
+- `POST /api/trigger_fresh_release_download` - Download specific release
+- `POST /api/trigger_navidrome_cleanup` - Run library cleanup
+
+## Usage Modes
+
+### 1. Automated Weekly Downloads
+
+Runs automatically every Tuesday at 00:00 (configurable) to:
+- Remove unrated or low-rated tracks (≤3 stars)
+- Download new recommendations
+- Organize and tag new tracks
+
+### 2. Fresh Releases Discovery
+
+Discovery of newly released albums:
+- Fetches from ListenBrainz fresh releases API each time you load the web page
+- Displays last 10 albums with album art
+- Allows selective downloading
+- Organizes into music library
+
+### 3. Manual Control
+
+Via web interface or command line:
+```bash
+# Download only ListenBrainz recommendations
+python re-command.py --source listenbrainz
+
+# Download only Last.fm recommendations
+python re-command.py --source lastfm
+
+# Download all available fresh releases
+python re-command.py --source fresh_releases
+
+# Bypass playlist change detection
+python re-command.py --bypass-playlist-check
+```
+
+## Advanced Configuration
+
+### Custom Download Quality
+If you have a Deezer Premium account, you can get better mp3 quality.
+
+Edit the Streamrip configuration in Docker:
+```bash
+docker exec -it re-command bash
+# Edit /root/.config/streamrip/config.toml
+```
+
+Or edit the Deemix config if you use it:
+```bash
+docker exec -it re-command bash
+# Edit /root/.config/deemix/config.json
+```
+
+### Custom Scheduling
+
+The default cron schedule runs weekly. Customize in the web interface or by editing the cron configuration in the container.
+
+### Custom Tag Comments
+
+Modify the comment tags for playlist creation:
+- `TARGET_COMMENT`: ListenBrainz tracks (default: lb_recommendation)
+- `LASTFM_TARGET_COMMENT`: Last.fm tracks (default: lastfm_recommendation)
+
+## Troubleshooting
+
+### Quick Fixes
+
+**Container Won't Start:**
+- Check all required environment variables are set
+- Verify Navidrome server is accessible
+- Ensure Deezer ARL token is valid
+
+**Downloads Failing:**
+- Verify ARL token is fresh (not expired)
+- Check Deezer account status (free accounts limited to 128kbps)
+- Ensure sufficient disk space
+
+**Web Interface Not Loading:**
+- Check port 5000 is not in use
+- Verify container is running: `docker ps`
+- Check logs: `docker logs re-command`
+
+**Navidrome Integration Issues:**
+- Verify server URL and credentials
+- Check Navidrome version (v0.49.0+ recommended)
+- Ensure music library path is writable
+
+### Logs and Debugging
+
+```bash
+# View container logs
+docker logs -f re-command
+
+# Access container shell
+docker exec -it re-command bash
+```
 
 ## Contributing
 
-Contributions to `re-command` are welcome! If you have ideas for improvements, bug fixes, or new features, please feel free to submit issues or pull requests on the project's repository.
+Contributions are welcome! Areas for improvement:
 
-## Future Development
+- Additional music recommendations (ie LLMs + scrobbling could be interesting)
+- Performance optimizations (notably for the webUI)
 
-*   **Enhanced Feedback System:** Implement submission of positive feedback to ListenBrainz and Last.fm for highly-rated tracks
-*   **LLM-based Music Discovery:** Support for LLM based suggestions.
+### Development Setup
+
+```bash
+git clone <repository_url>
+cd re-command
+pip install -r requirements.txt
+python re-command.py  # Test CLI
+python web_ui/app.py  # Test web UI
+```
+
+## Roadmap
+
+- [ ] **PWA Support:** Progressive Web App for mobile installation (and sharing links to re-command from mobile to the PWA for quick downloading)
+- [ ] **Single Song Listening/Downloading:** Preview tracks before download
+- [ ] **Enhanced Feedback:** Positive/negative feedback to Last.fm and Listenbrainz depending on the track rating.

@@ -4,6 +4,4 @@ deemix
 pylast
 streamrip
 mutagen
-Flask[async]
-gunicorn
 certifi
