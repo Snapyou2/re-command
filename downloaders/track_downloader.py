@@ -8,32 +8,47 @@ from streamrip.db import Database, Downloads, Failed
 from mutagen.id3 import ID3, COMM, error
 from tqdm import tqdm
 import sys
-from config import *
+import importlib
+import config
 
 class TrackDownloader:
     def __init__(self, tagger):
         self.tagger = tagger
-        self.temp_download_folder = TEMP_DOWNLOAD_FOLDER
-        self.deezer_arl = DEEZER_ARL
-        self.download_method = DOWNLOAD_METHOD
+        # Initial load, will be reloaded dynamically
+        self.temp_download_folder = config.TEMP_DOWNLOAD_FOLDER
+        self.deezer_arl = config.DEEZER_ARL
 
     async def download_track(self, song_info):
         """Downloads a track using the configured method."""
-        deezer_link = self._get_deezer_link_and_details(song_info)
-        if not deezer_link:
-            print(f"Skipping download for {song_info['artist']} - {song_info['title']} (no Deezer link found).")
-            return None
+        # Reload config to get the latest DOWNLOAD_METHOD
+        importlib.reload(config)
+        current_download_method = config.DOWNLOAD_METHOD
+        temp_download_folder = config.TEMP_DOWNLOAD_FOLDER
+        deezer_arl = config.DEEZER_ARL
+        comment = config.TARGET_COMMENT if song_info['source'] == 'ListenBrainz' else config.LASTFM_TARGET_COMMENT
 
+        print(f"Starting download for {song_info['artist']} - {song_info['title']}")
+        deezer_link = await self._get_deezer_link_and_details(song_info)
+        if not deezer_link:
+            error_msg = f"No Deezer link found for {song_info['artist']} - {song_info['title']}."
+            print(f"❌ {error_msg}")
+            return {"status": "error", "message": error_msg}
+
+        print(f"✅ Found Deezer link: {deezer_link}")
         downloaded_file_path = None
-        if self.download_method == "deemix":
-            downloaded_file_path = self._download_track_deemix(deezer_link, song_info)
-        elif self.download_method == "streamrip":
-            downloaded_file_path = await self._download_track_streamrip(deezer_link, song_info)
+        if current_download_method == "deemix":
+            print(f"📥 Downloading using deemix method...")
+            downloaded_file_path = self._download_track_deemix(deezer_link, song_info, temp_download_folder)
+        elif current_download_method == "streamrip":
+            print(f"📥 Downloading using streamrip method...")
+            downloaded_file_path = await self._download_track_streamrip(deezer_link, song_info, temp_download_folder)
         else:
-            print(f"Unknown DOWNLOAD_METHOD: {self.download_method}. Skipping download for {song_info['artist']} - {song_info['title']}.")
-            return None
+            error_msg = f"Unknown DOWNLOAD_METHOD: {current_download_method}. Skipping download for {song_info['artist']} - {song_info['title']}."
+            print(f"❌ {error_msg}")
+            return {"status": "error", "message": error_msg}
 
         if downloaded_file_path:
+            print(f"🏷️  Tagging downloaded file: {downloaded_file_path}")
             self.tagger.tag_track(
                 downloaded_file_path,
                 song_info['artist'],
@@ -44,37 +59,41 @@ class TrackDownloader:
                 song_info['source'],
                 song_info.get('album_art')
             )
+            print(f"💬 Adding comment to file: {comment}")
             self.tagger.add_comment_to_file(
                 downloaded_file_path,
-                TARGET_COMMENT if song_info['source'] == 'ListenBrainz' else LASTFM_TARGET_COMMENT
+                comment
             )
-            return downloaded_file_path
-        return None
+            print(f"✅ Successfully downloaded and processed: {song_info['artist']} - {song_info['title']}")
+            return {"status": "success", "file": downloaded_file_path}
+        else:
+            error_msg = f"Failed to download: {song_info['artist']} - {song_info['title']}"
+            print(f"❌ {error_msg}")
+            return {"status": "error", "message": error_msg}
 
-    def _get_deezer_link_and_details(self, song_info):
+    async def _get_deezer_link_and_details(self, song_info):
         """Fetches Deezer link and updates song_info with album details."""
         from apis.deezer_api import DeezerAPI
         deezer_api = DeezerAPI()
-        deezer_link = deezer_api.get_deezer_track_link(song_info['artist'], song_info['title'])
+        deezer_link = await deezer_api.get_deezer_track_link(song_info['artist'], song_info['title'])
         if deezer_link:
             track_id = deezer_link.split('/')[-1]
-            deezer_details = deezer_api.get_deezer_track_details(track_id)
+            deezer_details = await deezer_api.get_deezer_track_details(track_id)
             if deezer_details:
                 song_info['album'] = deezer_details.get('album', song_info['album'])
                 song_info['release_date'] = deezer_details.get('release_date', song_info['release_date'])
                 song_info['album_art'] = deezer_details.get('album_art', song_info.get('album_art'))
         return deezer_link
 
-    def _download_track_deemix(self, deezer_link, song_info):
+    def _download_track_deemix(self, deezer_link, song_info, temp_download_folder):
         """Downloads a track using deemix."""
         try:
-            output_dir = self.temp_download_folder
+            output_dir = temp_download_folder
             deemix_command = [
                 "deemix",
                 "-p", output_dir,
                 deezer_link
             ]
-            # Environment for deemix
             env = os.environ.copy()
             env['XDG_CONFIG_HOME'] = '/root/.config'
             env['HOME'] = '/root'
@@ -105,16 +124,16 @@ class TrackDownloader:
             print(f"Error downloading track {song_info['artist']} - {song_info['title']} ({deezer_link}) with deemix: {e}")
             return None
 
-    async def _download_track_streamrip(self, deezer_link: str, song_info):
+    async def _download_track_streamrip(self, deezer_link: str, song_info, temp_download_folder):
         """Downloads a track using streamrip."""
         try:
             # Streamrip Config object, path -> streamrip config file
             streamrip_config = Config("/root/.config/streamrip/config.toml")
+            
             # Initialize DeezerClient with the config object
             client = DeezerClient(config=streamrip_config)
             
             await client.login()
-            
             track_id = deezer_link.split('/')[-1]
             
             # Creating a database for streamrip
@@ -129,13 +148,12 @@ class TrackDownloader:
             if my_track is None:
                 print(f"Skipping download for {song_info['artist']} - {song_info['title']} (Error resolving media or already downloaded).", file=sys.stderr)
                 return None
-            
-            # Rip the track
+
             await my_track.rip()
             
             # After ripping, find the downloaded file in the temp_download_folder
             downloaded_file_path = None
-            output_dir = self.temp_download_folder
+            output_dir = temp_download_folder
             
             # Find a file matching artist and title in the output directory
             from utils import sanitize_filename

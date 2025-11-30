@@ -29,9 +29,23 @@ DEEZER_ARL = ""
 # Download Method
 DOWNLOAD_METHOD = "streamrip"
 
+# Album Recommendation Settings
+ALBUM_RECOMMENDATION_ENABLED = os.getenv('ALBUM_RECOMMENDATION_ENABLED', 'false').lower() == 'true'
+
+# UI Visibility Settings
+HIDE_DOWNLOAD_FROM_LINK = os.getenv('HIDE_DOWNLOAD_FROM_LINK', 'false').lower() == 'true'
+HIDE_FRESH_RELEASES = os.getenv('HIDE_FRESH_RELEASES', 'false').lower() == 'true'
+
 # Comment Tags for Playlist Creation
 TARGET_COMMENT = "lb_recommendation"
 LASTFM_TARGET_COMMENT = "lastfm_recommendation"
+ALBUM_RECOMMENDATION_COMMENT = "album_recommendation"
 
 # History Tracking
 PLAYLIST_HISTORY_FILE = "playlist_history.txt"
+
+# Caching for fresh releases (in seconds)
+FRESH_RELEASES_CACHE_DURATION = 300
+
+# Deezer API Rate Limiting
+DEEZER_MAX_CONCURRENT_REQUESTS = 3 

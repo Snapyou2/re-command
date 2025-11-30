@@ -1,3 +1,6 @@
+__pycache__
 apis/__pycache__
 downloaders/__pycache__
 web_ui/__pycache__
+docker/run_recommand_auto.sh
+roadmap.md

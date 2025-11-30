@@ -9,11 +9,48 @@ from tqdm import tqdm
 from config import *
 from apis.deezer_api import DeezerAPI
 from apis.lastfm_api import LastFmAPI
+from utils import initialize_streamrip_db, update_status_file # Import the new initialization function and update_status_file
 from apis.listenbrainz_api import ListenBrainzAPI
 from apis.navidrome_api import NavidromeAPI
 from downloaders.track_downloader import TrackDownloader
 from downloaders.album_downloader import AlbumDownloader
 from utils import remove_empty_folders, Tagger
+
+async def process_navidrome_cleanup():
+    """
+    Processes Navidrome library for cleanup based on ratings and submits feedback.
+    """
+    print("Starting Navidrome cleanup and feedback submission...")
+
+    listenbrainz_api = ListenBrainzAPI(
+        root_lb=LISTENBRAINZ_API_ROOT,
+        token_lb=LISTENBRAINZ_TOKEN,
+        user_lb=LISTENBRAINZ_USERNAME,
+        listenbrainz_enabled=LISTENBRAINZ_ENABLED
+    )
+    lastfm_api = LastFmAPI(
+        api_key=LASTFM_API_KEY,
+        api_secret=LASTFM_API_SECRET,
+        username=LASTFM_USERNAME,
+        session_key=LASTFM_SESSION_KEY,
+        lastfm_enabled=LASTFM_ENABLED
+    )
+    navidrome_api = NavidromeAPI(
+        root_nd=NAVIDROME_API_ROOT,
+        user_nd=NAVIDROME_USERNAME,
+        password_nd=NAVIDROME_PASSWORD,
+        music_library_path=MUSIC_LIBRARY_PATH,
+        target_comment=LB_RECOMMENDATION_COMMENT,
+        lastfm_target_comment=LASTFM_RECOMMENDATION_COMMENT
+    )
+    
+    await navidrome_api.process_navidrome_library(
+        listenbrainz_api=listenbrainz_api,
+        lastfm_api=lastfm_api
+    )
+
+    print("Navidrome cleanup and feedback submission finished.")
+
 
 async def process_recommendations(source="all", bypass_playlist_check=False):
     """
@@ -23,9 +60,30 @@ async def process_recommendations(source="all", bypass_playlist_check=False):
 
     tagger = Tagger()
     deezer_api = DeezerAPI()
-    lastfm_api = LastFmAPI()
-    listenbrainz_api = ListenBrainzAPI()
-    navidrome_api = NavidromeAPI()
+    lastfm_api = LastFmAPI(
+        api_key=LASTFM_API_KEY,
+        api_secret=LASTFM_API_SECRET,
+        username=LASTFM_USERNAME,
+        session_key=LASTFM_SESSION_KEY,
+        lastfm_enabled=LASTFM_ENABLED
+    )
+    listenbrainz_api = ListenBrainzAPI(
+        root_lb=ROOT_LB,
+        token_lb=TOKEN_LB,
+        user_lb=USER_LB,
+        listenbrainz_enabled=LISTENBRAINZ_ENABLED
+    )
+    navidrome_api = NavidromeAPI(
+        root_nd=ROOT_ND,
+        user_nd=USER_ND,
+        password_nd=PASSWORD_ND,
+        music_library_path=MUSIC_LIBRARY_PATH,
+        target_comment=TARGET_COMMENT,
+        lastfm_target_comment=LASTFM_TARGET_COMMENT,
+        album_recommendation_comment=ALBUM_RECOMMENDATION_COMMENT,
+        listenbrainz_enabled=LISTENBRAINZ_ENABLED,
+        lastfm_enabled=LASTFM_ENABLED
+    )
     track_downloader = TrackDownloader(tagger)
 
     all_recommendations = []
@@ -105,8 +163,23 @@ async def process_fresh_releases_albums():
     print("Starting re-command script for fresh releases albums...")
 
     tagger = Tagger()
-    listenbrainz_api = ListenBrainzAPI()
-    navidrome_api = NavidromeAPI()
+    listenbrainz_api = ListenBrainzAPI(
+        root_lb=ROOT_LB,
+        token_lb=TOKEN_LB,
+        user_lb=USER_LB,
+        listenbrainz_enabled=LISTENBRAINZ_ENABLED
+    )
+    navidrome_api = NavidromeAPI(
+        root_nd=ROOT_ND,
+        user_nd=USER_ND,
+        password_nd=PASSWORD_ND,
+        music_library_path=MUSIC_LIBRARY_PATH,
+        target_comment=TARGET_COMMENT,
+        lastfm_target_comment=LASTFM_TARGET_COMMENT,
+        album_recommendation_comment=ALBUM_RECOMMENDATION_COMMENT,
+        listenbrainz_enabled=LISTENBRAINZ_ENABLED,
+        lastfm_enabled=LASTFM_ENABLED
+    )
     album_downloader = AlbumDownloader(tagger)
 
     if not LISTENBRAINZ_ENABLED:
@@ -169,6 +242,9 @@ async def process_fresh_releases_albums():
     print("Script finished.")
 
 if __name__ == "__main__":
+    # Initialize streamrip database at the very start
+    initialize_streamrip_db()
+
     parser = argparse.ArgumentParser(description="Re-command Recommendation Script.")
     parser.add_argument(
         "--source",
@@ -182,9 +258,29 @@ if __name__ == "__main__":
         action="store_true",
         help="Bypass playlist change verification for ListenBrainz (always download recommendations)."
     )
+    parser.add_argument(
+        "--cleanup",
+        action="store_true",
+        help="Process Navidrome library for cleanup based on ratings and submit feedback."
+    )
+    parser.add_argument(
+        "--download-id",
+        type=str,
+        help="Unique ID for the download task, used for status tracking."
+    )
     args = parser.parse_args()
 
-    if args.source == "fresh_releases":
-        asyncio.run(process_fresh_releases_albums())
-    else:
-        asyncio.run(process_recommendations(source=args.source, bypass_playlist_check=args.bypass_playlist_check))
+    # Initial status update
+    update_status_file(args.download_id, "in_progress", "Download initiated.")
+
+    try:
+        if args.source == "fresh_releases":
+            asyncio.run(process_fresh_releases_albums())
+        elif args.cleanup:
+            asyncio.run(process_navidrome_cleanup())
+        else:
+            asyncio.run(process_recommendations(source=args.source, bypass_playlist_check=args.bypass_playlist_check))
+        update_status_file(args.download_id, "completed", "Download finished successfully.")
+    except Exception as e:
+        update_status_file(args.download_id, "failed", f"Download failed: {e}")
+        raise # Re-raise the exception after updating status

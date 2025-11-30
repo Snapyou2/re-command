@@ -1,21 +1,39 @@
 import requests
-import time
+import time # Import time for caching
 import os
-import subprocess
 import asyncio
+import concurrent.futures
 import sys
 from streamrip.client import DeezerClient
 from mutagen.id3 import ID3, COMM
 from apis.deezer_api import DeezerAPI
-from config import *
+from config import PLAYLIST_HISTORY_FILE, FRESH_RELEASES_CACHE_DURATION
 
 class ListenBrainzAPI:
-    def __init__(self):
-        self.root_lb = ROOT_LB
-        self.token_lb = TOKEN_LB
-        self.user_lb = USER_LB
-        self.auth_header_lb = {"Authorization": f"Token {self.token_lb}"}
+    def __init__(self, root_lb, token_lb, user_lb, listenbrainz_enabled):
+        self._root_lb = root_lb
+        self._token_lb = token_lb
+        self._user_lb = user_lb
+        self._listenbrainz_enabled = listenbrainz_enabled
         self.playlist_history_file = PLAYLIST_HISTORY_FILE
+        self._fresh_releases_cache = None
+        self._fresh_releases_cache_timestamp = 0
+
+    @property
+    def root_lb(self):
+        return self._root_lb
+
+    @property
+    def token_lb(self):
+        return self._token_lb
+
+    @property
+    def user_lb(self):
+        return self._user_lb
+
+    @property
+    def auth_header_lb(self):
+        return {"Authorization": f"Token {self.token_lb}"}
 
     def _get_last_playlist_name(self):
         """Retrieves the last playlist name from the history file."""
@@ -118,7 +136,7 @@ class ListenBrainzAPI:
             'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         url = f"https://musicbrainz.org/ws/2/recording/{recording_mbid}?fmt=json&inc=artist-credits+releases"
-        
+
         try:
             response = await self._make_request_with_retries(
                 method="GET",
@@ -138,7 +156,6 @@ class ListenBrainzAPI:
                 album = "Unknown Album"
                 release_date = None
                 release_mbid = None
-            await asyncio.sleep(3)
             return artist, title, album, release_date, release_mbid
         except requests.exceptions.RequestException as e:
             print(f"Error getting track info for {recording_mbid}: {e}", file=sys.stderr)
@@ -146,7 +163,7 @@ class ListenBrainzAPI:
 
     async def get_listenbrainz_recommendations(self):
         """Fetches recommended songs from ListenBrainz and returns them as a list."""
-        if not LISTENBRAINZ_ENABLED:
+        if not self._listenbrainz_enabled:
             return []
 
         print("\nChecking for new ListenBrainz recommendations...")
@@ -161,111 +178,115 @@ class ListenBrainzAPI:
         print("       @                                                                                                                    ")
         print("                                                                                                                            ")
 
-        latest_playlist_name = await self.get_latest_playlist_name()
+        try:
+            latest_playlist_name = await self.get_latest_playlist_name()
 
-        if latest_playlist_name is None:
-            print("Error: Could not retrieve the latest ListenBrainz playlist name.")
+            if latest_playlist_name is None:
+                print("Error: Could not retrieve the latest ListenBrainz playlist name.")
+                return []
+
+            playlist_json = await self._get_recommendation_playlist(self.user_lb)
+
+            latest_playlist_mbid = None
+            for playlist in playlist_json["playlists"]:
+                if playlist["playlist"]["title"] == latest_playlist_name:
+                    latest_playlist_mbid = playlist["playlist"]["identifier"].split("/")[-1]
+                    break
+
+            if latest_playlist_mbid is None:
+                print(f"Error: Could not find ListenBrainz playlist with name '{latest_playlist_name}'.")
+                return []
+
+            latest_playlist = await self._get_playlist_by_mbid(latest_playlist_mbid)
+
+            tracks = latest_playlist["playlist"]["track"]
+            
+            # Create a list of tasks for processing each track
+            processing_tasks = [self._process_track_for_recommendations(track) for track in tracks]
+            
+            # Run all tasks concurrently
+            recommended_songs = await asyncio.gather(*processing_tasks)
+
+            return recommended_songs
+        except Exception as e:
+            print(f"ERROR in get_listenbrainz_recommendations: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc()
             return []
 
-        playlist_json = await self._get_recommendation_playlist(self.user_lb)
-        latest_playlist_mbid = None
-        for playlist in playlist_json["playlists"]:
-            if playlist["playlist"]["title"] == latest_playlist_name:
-                latest_playlist_mbid = playlist["playlist"]["identifier"].split("/")[-1]
-                break
+    async def _process_track_for_recommendations(self, track):
+        """Helper to fetch full track details and album art for a single track asynchronously."""
+        artist = track.get("creator", "Unknown Artist")
+        title = track.get("title", "Unknown Title")
+        album = track.get("album", "Unknown Album")
+        
+        recording_mbid = None
+        release_mbid_found = None
+        caa_id = None
 
-        if latest_playlist_mbid is None:
-            print(f"Error: Could not find ListenBrainz playlist with name '{latest_playlist_name}'.")
-            return []
+        # Extract recording MBID
+        if "identifier" in track:
+            identifiers = track["identifier"]
+            if isinstance(identifiers, list) and identifiers:
+                for ident in identifiers:
+                    if isinstance(ident, str) and ident.startswith("https://musicbrainz.org/recording/"):
+                        recording_mbid = ident.split("/")[-1]
+                        break
+            elif isinstance(identifiers, str) and identifiers.startswith("https://musicbrainz.org/recording/"):
+                recording_mbid = identifiers.split("/")[-1]
 
-        latest_playlist = await self._get_playlist_by_mbid(latest_playlist_mbid)
+        if not recording_mbid:
+            for field in ["id", "recording_mbid", "mbid"]:
+                value = track.get(field)
+                if value and value != "null" and value is not None:
+                    recording_mbid = value
+                    break
 
-        tracks = latest_playlist["playlist"]["track"]
-        recommended_songs = []
-        for track in tracks:
-            artist = track.get("creator", "Unknown Artist")
-            title = track.get("title", "Unknown Title")
-            album = track.get("album", "Unknown Album")
-            recording_mbid = track.get("id")
-            if artist and title:
-                song = {
-                    "artist": artist,
-                    "title": title,
-                    "album": album,
-                    "release_date": None,  # Not available in playlist
-                    "album_art": None, # Fetched by frontend
-                    "recording_mbid": recording_mbid,
-                    "source": "ListenBrainz"
-                }
-                recommended_songs.append(song)
-        return recommended_songs
+        # Extract release MBID and CAA ID directly from ListenBrainz data if available
+        if "extension" in track and "https://musicbrainz.org/doc/jspf#track" in track["extension"]:
+            mb_extension = track["extension"]["https://musicbrainz.org/doc/jspf#track"]
+            if "additional_metadata" in mb_extension:
+                additional_metadata = mb_extension["additional_metadata"]
+                if "caa_release_mbid" in additional_metadata and additional_metadata["caa_release_mbid"] and additional_metadata["caa_release_mbid"] != "null":
+                    release_mbid_found = str(additional_metadata["caa_release_mbid"])
+                if "caa_id" in additional_metadata and additional_metadata["caa_id"] and additional_metadata["caa_id"] != "null":
+                    caa_id = str(additional_metadata["caa_id"])
+        
+        # Fallback for release_mbid if not found in extension
+        if not release_mbid_found:
+            if "release_mbid" in track and track["release_mbid"] and track["release_mbid"] != "null":
+                release_mbid_found = track["release_mbid"]
+            elif "caa_release_mbid" in track and track["caa_release_mbid"] and track["caa_release_mbid"] != "null":
+                release_mbid_found = track["caa_release_mbid"]
 
-    async def _fetch_album_art_from_caa(self, release_mbid):
-        """Fetches album art from Cover Art Archive using release MBID asynchronously."""
-        if not release_mbid:
-            return None
-        url = f"https://coverartarchive.org/release/{release_mbid}/front-250"
-        try:
-            response = await self._make_request_with_retries(
-                method="HEAD",
-                url=url,
-                headers={},
-                retry_delay=1
-            )
-            return url
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 404:
-                print(f"  No cover art found for MBID {release_mbid}")
-                return None
-            else:
-                raise
-        except Exception as e:
-            print(f"  Error fetching from CAA for MBID {release_mbid}: {e}")
-            return None
+        fetched_artist, fetched_title, fetched_album, release_date, musicbrainz_release_mbid = \
+            artist, title, album, None, release_mbid_found # Default values
 
-    async def _fetch_album_art_for_track(self, artist, title, release_mbid=None):
-        """Fetches album art for a single track asynchronously."""
-        print(f"Fetching album art for: {artist} - {title}")
-        # CAA first if mbid available
-        if release_mbid:
-            print(f"  Trying CAA with MBID {release_mbid}")
-            try:
-                caa_url = await self._fetch_album_art_from_caa(release_mbid)
-                if caa_url:
-                    print(f"  Success: Found album art from CAA for {artist} - {title}")
-                    return caa_url
-            except requests.exceptions.HTTPError as e:
-                if e.response.status_code == 404:
-                    print(f"  CAA returned 404 for MBID {release_mbid}, trying Deezer")
-                else:
-                    print(f"  CAA error {e.response.status_code} for MBID {release_mbid}, not trying Deezer")
-                    return '/assets/default-album.svg'
-            except Exception as e:
-                print(f"  Error with CAA for MBID {release_mbid}: {e}, not trying Deezer")
-                return '/assets/default-album.svg'
+        # Pass caa_release_mbid and caa_id to the frontend for album art loading
+        return {
+            "artist": artist,
+            "title": title,
+            "album": album,
+            "release_date": release_date,
+            "recording_mbid": recording_mbid,
+            "source": "ListenBrainz",
+            "caa_release_mbid": release_mbid_found,
+            "caa_id": caa_id
+        }
 
-        # Fall back to Deezer if no mbid or CAA failed with 404
-        loop = asyncio.get_event_loop()
-        deezer_api = DeezerAPI()
-        print(f"  Trying Deezer album search for {artist} - {title}")
-        try:
-            details = await loop.run_in_executor(None, lambda: deezer_api.get_deezer_album_art(artist, title))
-            if details and details.get('album_art'):
-                print(f"  Success: Found album art from Deezer for {artist} - {title}")
-                return details.get('album_art')
-        except Exception as e:
-            print(f"  Deezer search failed for {artist} - {title}: {e}")
-
-        print(f"  All attempts failed for {artist} - {title}, using placeholder")
-        return '/assets/default-album.svg'
-
-    async def get_fresh_releases(self, sort="release_date", past=True, future=True):
+    async def get_fresh_releases(self, sort="release_date", past=True, future=False):
         """Fetches fresh releases for the user from ListenBrainz asynchronously."""
         params = {
             "sort": sort,
             "past": str(past).lower(),
             "future": str(future).lower()
         }
+        
+        if self._fresh_releases_cache and (time.time() - self._fresh_releases_cache_timestamp) < FRESH_RELEASES_CACHE_DURATION:
+            print(f"Returning cached fresh releases (cached at {time.ctime(self._fresh_releases_cache_timestamp)})")
+            return self._fresh_releases_cache
+
+        print("Fetching fresh releases from ListenBrainz API...")
         response = await self._make_request_with_retries(
             method="GET",
             url=f"{self.root_lb}/1/user/{self.user_lb}/fresh_releases",
@@ -275,23 +296,42 @@ class ListenBrainzAPI:
         data = response.json()
         releases = data.get('payload', {}).get('releases', [])
 
-        # Sort by release_date in descending order and take the first 10
-        releases.sort(key=lambda x: x.get('release_date', ''), reverse=True)
+        # Sort by release_date (descending) and then confidence (descending)
+        releases.sort(key=lambda x: (x.get('release_date', ''), x.get('confidence', 0)), reverse=True)
         latest_10_releases = releases[:10]
 
+        # Album art is fetched by the frontend
         for release in latest_10_releases:
-            release['album_art'] = None # Placeholder, fetched by fronted
+            release['album_art'] = None 
+        
+        result = {'payload': {'releases': latest_10_releases}}
+        self._fresh_releases_cache = result
+        self._fresh_releases_cache_timestamp = time.time()
+        print(f"Cached fresh releases at {time.ctime(self._fresh_releases_cache_timestamp)}")
+        
+        return result
 
-        return {'payload': {'releases': latest_10_releases}}
 
-    def submit_feedback(self, recording_mbid, score):
+
+    async def submit_feedback(self, recording_mbid, score):
         """Submits feedback for a recording to ListenBrainz."""
         payload = {"recording_mbid": recording_mbid, "score": score}
+        url = f"{self.root_lb}/1/feedback/recording-feedback"
 
-        response = requests.post(
-            url=f"{self.root_lb}/1/feedback/recording-feedback",
-            json=payload,
-            headers=self.auth_header_lb
-        )
-        response.raise_for_status()
-        print(f"Feedback submitted for {recording_mbid}: {score}")
+        print(f"Submitting feedback to {url}")
+        print(f"Payload: {payload}")
+        print(f"Headers: {self.auth_header_lb}")
+
+        try:
+            response = await self._make_request_with_retries(
+                method="POST",
+                url=url,
+                headers=self.auth_header_lb,
+                json=payload
+            )
+            print(f"Response status: {response.status_code}")
+            print(f"Response text: {response.text}")
+            print(f"Feedback submitted for {recording_mbid}: {score}")
+        except Exception as e:
+            print(f"Error submitting feedback: {e}")
+            raise

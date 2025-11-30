@@ -1,20 +1,28 @@
 import requests
 import hashlib
 import os
-import subprocess
 import sys
 import shutil
 from tqdm import tqdm
-from config import *
+from config import TEMP_DOWNLOAD_FOLDER 
+from mutagen import File, MutagenError
+from mutagen.id3 import ID3, COMM, ID3NoHeaderError, error as ID3Error
+from mutagen.mp3 import MP3
+from mutagen.flac import FLAC
+from mutagen.oggvorbis import OggVorbis
+from mutagen.m4a import M4A
 
 class NavidromeAPI:
-    def __init__(self):
-        self.root_nd = ROOT_ND
-        self.user_nd = USER_ND
-        self.password_nd = PASSWORD_ND
-        self.music_library_path = MUSIC_LIBRARY_PATH
-        self.target_comment = TARGET_COMMENT
-        self.lastfm_target_comment = LASTFM_TARGET_COMMENT
+    def __init__(self, root_nd, user_nd, password_nd, music_library_path, target_comment, lastfm_target_comment, album_recommendation_comment=None, listenbrainz_enabled=False, lastfm_enabled=False):
+        self.root_nd = root_nd
+        self.user_nd = user_nd
+        self.password_nd = password_nd
+        self.music_library_path = music_library_path
+        self.target_comment = target_comment
+        self.lastfm_target_comment = lastfm_target_comment
+        self.album_recommendation_comment = album_recommendation_comment
+        self.listenbrainz_enabled = listenbrainz_enabled
+        self.lastfm_enabled = lastfm_enabled
 
     def _get_navidrome_auth_params(self):
         """Generates authentication parameters for Navidrome."""
@@ -66,13 +74,36 @@ class NavidromeAPI:
             return None
 
     def _update_song_comment(self, file_path, new_comment):
-        """Updates the comment of a song using kid3-cli."""
+        """Updates the comment of a song using Mutagen."""
         try:
-            subprocess.run(["kid3-cli", "-c", f"set comment \"{new_comment}\"", file_path], check=True)
-        except subprocess.CalledProcessError as e:
-            print(f"Error updating comment for {file_path}: {e}")
-        except FileNotFoundError:
-            print(f"kid3-cli not found. Is it installed and in your PATH?")
+            audio = File(file_path)
+            if audio is None:
+                print(f"Could not open audio file with Mutagen: {file_path}")
+                return
+
+            if file_path.lower().endswith('.mp3'):
+                if audio.tags is None:
+                    audio.tags = ID3()
+                audio.tags.delall('COMM') # Remove existing comments
+                if new_comment:
+                    audio.tags.add(COMM(encoding=3, lang='eng', desc='', text=[new_comment]))
+            elif file_path.lower().endswith('.flac'):
+                audio['comment'] = [new_comment] if new_comment else []
+            elif file_path.lower().endswith(('.ogg', '.oga')):
+                audio['comment'] = [new_comment] if new_comment else []
+            elif file_path.lower().endswith('.m4a'):
+                audio['\xa9cmt'] = [new_comment] if new_comment else []
+            else:
+                print(f"Unsupported file type for comment update: {file_path}")
+                return
+            
+            audio.save()
+            print(f"Successfully updated comment for {file_path} with Mutagen.")
+
+        except MutagenError as e:
+            print(f"Error updating comment for {file_path} with Mutagen: {e}")
+        except Exception as e:
+            print(f"An unexpected error occurred while updating comment for {file_path}: {e}")
 
     def _delete_song(self, song_path):
         """Deletes a song file and provides verbose output. Returns True if deleted, False otherwise."""
@@ -234,7 +265,7 @@ class NavidromeAPI:
         salt, token = self._get_navidrome_auth_params()
         all_songs = self._get_all_songs(salt, token)
         print(f"Parsing {len(all_songs)} songs from Navidrome to cleanup badly rated songs.")
-        print(f"Looking for comments: '{self.target_comment}' (ListenBrainz) and '{self.lastfm_target_comment}' (Last.fm)")
+        print(f"Looking for comments: '{self.target_comment}' (ListenBrainz), '{self.lastfm_target_comment}' (Last.fm), and '{self.album_recommendation_comment}' (Album Recommendation)")
 
         deleted_songs = []
         found_comments = []
@@ -256,14 +287,17 @@ class NavidromeAPI:
             # Check tags for target comment using mutagen
             actual_comment = ""
             try:
-                from mutagen.id3 import ID3, COMM, ID3NoHeaderError
+                # Use File() to open various audio formats
+                audio = File(song_path)
+                if audio is None:
+                    raise MutagenError("Could not open audio file.")
 
-                # ID3 tags for mutagen are MP3-specific
                 if song_path.lower().endswith('.mp3'):
-                    audio = ID3(song_path)
-
-                    # First, try to get all COMM frames (including language-specific ones)
-                    comm_frames = audio.getall('COMM')
+                    # For MP3s, use ID3 tags
+                    if audio.tags is None:
+                        raise ID3Error("No ID3 tags found.")
+                    
+                    comm_frames = audio.tags.getall('COMM')
 
                     for comm_frame in comm_frames:
                         # Try to get text from the frame
@@ -318,8 +352,9 @@ class NavidromeAPI:
             
             # Use the actual file comment if available, otherwise use API comment
             song_comment = actual_comment if actual_comment else api_comment
-            has_recommendation_comment = (song_comment == self.target_comment or 
-                                        song_comment == self.lastfm_target_comment)
+            has_recommendation_comment = (song_comment == self.target_comment or
+                                        song_comment == self.lastfm_target_comment or
+                                        song_comment == self.album_recommendation_comment)
             
 
             
@@ -327,7 +362,7 @@ class NavidromeAPI:
                 user_rating = song_details.get('userRating', 0)
                 
                 # ListenBrainz recommendations
-                if song_comment == self.target_comment and LISTENBRAINZ_ENABLED:
+                if song_comment == self.target_comment and self.listenbrainz_enabled:
                     if user_rating >= 4:
                         self._update_song_comment(song_path, "")
                     elif user_rating <= 3:
@@ -347,7 +382,7 @@ class NavidromeAPI:
                             listenbrainz_api.submit_feedback(song_details['musicBrainzId'], 1)
 
                 # Last.fm recommendations
-                elif song_comment == self.lastfm_target_comment and LASTFM_ENABLED:
+                elif song_comment == self.lastfm_target_comment and self.lastfm_enabled:
                     if user_rating >= 4:
                         self._update_song_comment(song_path, "")
                     elif user_rating <= 3:
@@ -363,9 +398,27 @@ class NavidromeAPI:
                         else:
                             if self._delete_song(song_path):
                                 deleted_songs.append(f"{song_details['artist']} - {song_details['title']}")
-                
+
+                # Album recommendations
+                elif song_comment == self.album_recommendation_comment:
+                    if user_rating >= 4:
+                        self._update_song_comment(song_path, "")
+                    elif user_rating <= 3:
+                        if os.path.isdir(song_path):
+                            all_files_deleted_in_dir = True
+                            for root, _, files in os.walk(song_path):
+                                for file in files:
+                                    file_to_delete = os.path.join(root, file)
+                                    if not self._delete_song(file_to_delete):
+                                        all_files_deleted_in_dir = False
+                            if all_files_deleted_in_dir:
+                                deleted_songs.append(f"{song_details['artist']} - {song_details['title']}")
+                        else:
+                            if self._delete_song(song_path):
+                                deleted_songs.append(f"{song_details['artist']} - {song_details['title']}")
+
                 # When no specific service is enabled, delete all commented songs
-                elif not LISTENBRAINZ_ENABLED and not LASTFM_ENABLED:
+                elif not self.listenbrainz_enabled and not self.lastfm_enabled:
                     if os.path.isdir(song_path):
                         all_files_deleted_in_dir = True
                         for root, _, files in os.walk(song_path):
@@ -393,48 +446,127 @@ class NavidromeAPI:
         Organizes music files from a source folder into a destination base folder
         using Artist/Album/filename structure based on metadata.
         """
-        from mutagen.id3 import ID3, COMM, ID3NoHeaderError
+        from mutagen.id3 import ID3, ID3NoHeaderError
+        from mutagen.flac import FLAC
+        from mutagen.mp3 import MP3
+        from mutagen.oggvorbis import OggVorbis
+        from mutagen.m4a import M4A
         from utils import sanitize_filename
 
         print(f"\nOrganizing music files from '{source_folder}' to '{destination_base_folder}'...")
-        for entry in os.scandir(source_folder):
-            if entry.is_file() and entry.name.endswith(".mp3"):
-                mp3_file_path = entry.path
-                try:
-                    audio = ID3(mp3_file_path)
-                    artist = str(audio.get('TPE1', ['Unknown Artist'])[0])
-                    album = str(audio.get('TALB', ['Unknown Album'])[0])
-                    title = str(audio.get('TIT2', [os.path.splitext(entry.name)[0]])[0])
 
-                    artist = sanitize_filename(artist)
-                    album = sanitize_filename(album)
-                    title = sanitize_filename(title)
+        # Supported audio file extensions
+        audio_extensions = ('.mp3', '.flac', '.m4a', '.aac', '.ogg', '.wma')
 
-                    artist_folder = os.path.join(destination_base_folder, artist)
-                    album_folder = os.path.join(artist_folder, album)
-                    
-                    new_filename = f"{title}.mp3"
-                    new_file_path = os.path.join(album_folder, new_filename)
-                    
-                    counter = 1
-                    while os.path.exists(new_file_path):
-                        new_filename = f"{title} ({counter}).mp3"
+        for root, dirs, files in os.walk(source_folder):
+            for filename in files:
+                if filename.lower().endswith(audio_extensions):
+                    file_path = os.path.join(root, filename)
+                    file_ext = os.path.splitext(filename)[1].lower()
+
+                    try:
+                        # Extract metadata based on file type
+                        if file_ext == '.mp3':
+                            audio = ID3(file_path)
+                            artist = str(audio.get('TPE1', ['Unknown Artist'])[0])
+                            album = str(audio.get('TALB', ['Unknown Album'])[0])
+                            title = str(audio.get('TIT2', [os.path.splitext(filename)[0]])[0])
+                        elif file_ext == '.flac':
+                            audio = FLAC(file_path)
+                            artist_tag = audio.get('artist')
+                            if artist_tag:
+                                artist = artist_tag[0] if isinstance(artist_tag, list) else str(artist_tag)
+                            else:
+                                artist = 'Unknown Artist'
+                            album_tag = audio.get('album')
+                            if album_tag:
+                                album = album_tag[0] if isinstance(album_tag, list) else str(album_tag)
+                            else:
+                                album = 'Unknown Album'
+                            title_tag = audio.get('title')
+                            if title_tag:
+                                title = title_tag[0] if isinstance(title_tag, list) else str(title_tag)
+                            else:
+                                title = os.path.splitext(filename)[0]
+                        elif file_ext in ('.m4a', '.aac'):
+                            audio = M4A(file_path)
+                            artist_tag = audio.get('\xa9ART')
+                            if artist_tag:
+                                artist = artist_tag[0] if isinstance(artist_tag, list) else str(artist_tag)
+                            else:
+                                artist = 'Unknown Artist'
+                            album_tag = audio.get('\xa9alb')
+                            if album_tag:
+                                album = album_tag[0] if isinstance(album_tag, list) else str(album_tag)
+                            else:
+                                album = 'Unknown Album'
+                            title_tag = audio.get('\xa9nam')
+                            if title_tag:
+                                title = title_tag[0] if isinstance(title_tag, list) else str(title_tag)
+                            else:
+                                title = os.path.splitext(filename)[0]
+                        elif file_ext in ('.ogg', '.wma'):
+                            audio = OggVorbis(file_path)
+                            artist_tag = audio.get('artist')
+                            if artist_tag:
+                                artist = artist_tag[0] if isinstance(artist_tag, list) else str(artist_tag)
+                            else:
+                                artist = 'Unknown Artist'
+                            album_tag = audio.get('album')
+                            if album_tag:
+                                album = album_tag[0] if isinstance(album_tag, list) else str(album_tag)
+                            else:
+                                album = 'Unknown Album'
+                            title_tag = audio.get('title')
+                            if title_tag:
+                                title = title_tag[0] if isinstance(title_tag, list) else str(title_tag)
+                            else:
+                                title = os.path.splitext(filename)[0]
+                        else:
+                            # Fallback for unsupported formats
+                            artist = "Unknown Artist"
+                            album = "Unknown Album"
+                            title = os.path.splitext(filename)[0]
+
+                        artist = sanitize_filename(artist)
+                        album = sanitize_filename(album)
+                        title = sanitize_filename(title)
+
+                        artist_folder = os.path.join(destination_base_folder, artist)
+                        album_folder = os.path.join(artist_folder, album)
+
+                        new_filename = f"{title}{file_ext}"
                         new_file_path = os.path.join(album_folder, new_filename)
-                        counter += 1
 
-                    os.makedirs(album_folder, exist_ok=True)
-                    shutil.move(mp3_file_path, new_file_path)
-                    print(f"Moved '{entry.name}' to '{os.path.relpath(new_file_path, destination_base_folder)}'")
-                except ID3NoHeaderError:
-                    print(f"Skipping '{entry.name}': No ID3 tag found.")
-                    unorganized_folder = os.path.join(destination_base_folder, "Unorganized")
-                    os.makedirs(unorganized_folder, exist_ok=True)
-                    shutil.move(mp3_file_path, os.path.join(unorganized_folder, entry.name))
-                    print(f"Moved '{entry.name}' to 'Unorganized' due to missing ID3 tags.")
-                except Exception as e:
-                    print(f"Error organizing '{entry.name}': {e}")
+                        counter = 1
+                        while os.path.exists(new_file_path):
+                            new_filename = f"{title} ({counter}){file_ext}"
+                            new_file_path = os.path.join(album_folder, new_filename)
+                            counter += 1
 
-        # Cleaning up __artwork subfolder before temp folder gets deleted
+                        os.makedirs(album_folder, exist_ok=True)
+                        shutil.move(file_path, new_file_path)
+                        print(f"Moved '{filename}' to '{os.path.relpath(new_file_path, destination_base_folder)}'")
+                    except Exception as e:
+                        print(f"Error organizing '{filename}': {e}")
+                        unorganized_folder = os.path.join(destination_base_folder, "Unorganized")
+                        os.makedirs(unorganized_folder, exist_ok=True)
+                        shutil.move(file_path, os.path.join(unorganized_folder, filename))
+                        print(f"Moved '{filename}' to 'Unorganized' due to error: {e}")
+
+        # Clean up empty directories and __artwork subfolder
+        def remove_empty_dirs(path):
+            """Recursively remove empty directories."""
+            for root, dirs, files in os.walk(path, topdown=False):
+                for dir_name in dirs:
+                    dir_path = os.path.join(root, dir_name)
+                    try:
+                        os.rmdir(dir_path)
+                        print(f"Removed empty directory: {dir_path}")
+                    except OSError:
+                        pass
+
+        # Remove __artwork folder
         artwork_folder = os.path.join(source_folder, "__artwork")
         if os.path.exists(artwork_folder) and os.path.isdir(artwork_folder):
             try:
@@ -442,3 +574,6 @@ class NavidromeAPI:
                 print(f"Removed __artwork folder: {artwork_folder}")
             except Exception as e:
                 print(f"Warning: Could not remove __artwork folder {artwork_folder}: {e}")
+
+        # Remove empty directories in source folder
+        remove_empty_dirs(source_folder)

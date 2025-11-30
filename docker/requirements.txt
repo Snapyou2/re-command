@@ -1,7 +1,7 @@
-requests
+requests==2.31.0
 tqdm
 deemix
 pylast
 streamrip
 mutagen
-certifi
+certifi==2023.7.22

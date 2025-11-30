@@ -5,14 +5,20 @@ import requests
 import webbrowser
 import importlib
 import concurrent.futures
+import hashlib
 from apis.deezer_api import DeezerAPI
-from config import *
+from config import LASTFM_ENABLED as GLOBAL_LASTFM_ENABLED
 
 class LastFmAPI:
-    def __init__(self):
+    def __init__(self, api_key, api_secret, username, session_key, lastfm_enabled):
+        self._api_key = api_key
+        self._api_secret = api_secret
+        self._username = username
+        self._session_key = session_key
+        self._lastfm_enabled = lastfm_enabled
         self.network = None
 
-    def _make_request_with_retries(self, method, url, headers, params=None, json=None, max_retries=5, retry_delay=5):
+    def _make_request_with_retries(self, method, url, headers=None, params=None, json=None, data=None, max_retries=5, retry_delay=5):
         """
         Makes an HTTP request with retry logic for connection errors.
         """
@@ -21,7 +27,14 @@ class LastFmAPI:
                 if method == "GET":
                     response = requests.get(url, headers=headers, params=params)
                 elif method == "POST":
-                    response = requests.post(url, headers=headers, json=json)
+                    if json:
+                        response = requests.post(url, headers=headers, json=json)
+                    elif data:
+                        response = requests.post(url, headers=headers, data=data)
+                    else:
+                        response = requests.post(url, headers=headers)
+                elif method == "HEAD":
+                    response = requests.head(url, headers=headers, params=params)
                 response.raise_for_status()
                 return response
             except requests.exceptions.ConnectionError as e:
@@ -37,11 +50,10 @@ class LastFmAPI:
 
     def authenticate_lastfm(self):
         """Authenticates with Last.fm using pylast."""
-        api_key = LASTFM_API_KEY
-        api_secret = LASTFM_API_SECRET
-        username = LASTFM_USERNAME
-        password_hash = LASTFM_PASSWORD_HASH
-        session_key = LASTFM_SESSION_KEY
+        api_key = self._api_key
+        api_secret = self._api_secret
+        username = self._username
+        session_key = self._session_key
 
         if not (api_key and api_secret and username):
             print("Last.fm API key, secret, or username not configured.")
@@ -53,13 +65,6 @@ class LastFmAPI:
                 api_secret=api_secret,
                 username=username,
                 session_key=session_key
-            )
-        elif password_hash:
-            self.network = pylast.LastFMNetwork(
-                api_key=api_key,
-                api_secret=api_secret,
-                username=username,
-                password_hash=password_hash
             )
         else:
             # Get session key if not configured
@@ -94,7 +99,7 @@ class LastFmAPI:
             print("Last.fm not authenticated.")
             return []
 
-        username = LASTFM_USERNAME
+        username = self._username
         recommendations = []
 
         url = f"https://www.last.fm/player/station/user/{username}/recommended"
@@ -139,7 +144,7 @@ class LastFmAPI:
 
     def get_lastfm_recommendations(self):
         """Fetches recommended tracks from Last.fm and returns them as a list."""
-        if not LASTFM_ENABLED:
+        if not self._lastfm_enabled:
             return []
 
         print("\nChecking for new Last.fm recommendations...")
@@ -167,8 +172,9 @@ class LastFmAPI:
 
         # Parallel album arts fetching
         def fetch_art(track):
+            import asyncio
             deezer_api = DeezerAPI()
-            details = deezer_api.get_deezer_track_details_from_artist_title(track["artist"], track["title"])
+            details = asyncio.run(deezer_api.get_deezer_track_details_from_artist_title(track["artist"], track["title"]))
             return details
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
@@ -191,3 +197,76 @@ class LastFmAPI:
                 song["album"] = details.get("album", song["album"])
             songs.append(song)
         return songs
+
+    def love_track(self, track, artist):
+        """Loves a track on Last.fm."""
+        if not self._lastfm_enabled:
+            raise Exception("Last.fm is not enabled")
+
+        if not self._session_key:
+            raise Exception("Last.fm session key not configured")
+
+        # Prepare parameters for API signature
+        params = {
+            'method': 'track.love',
+            'track': track,
+            'artist': artist,
+            'api_key': self._api_key,
+            'sk': self._session_key
+        }
+
+        # Generate API signature
+        sorted_params = sorted(params.items())
+        sig_string = ''.join(f"{k}{v}" for k, v in sorted_params) + self._api_secret
+        api_sig = hashlib.md5(sig_string.encode('utf-8')).hexdigest()
+
+        # Add signature to params
+        params['api_sig'] = api_sig
+        params['format'] = 'json'
+
+        url = "https://ws.audioscrobbler.com/2.0/"
+
+        try:
+            response = self._make_request_with_retries(
+                method="POST",
+                url=url,
+                headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                data=params
+            )
+            if response.status_code == 200:
+                # Last.fm API returns XML for success, JSON for error
+                response_text = response.text.strip()
+                if response_text.startswith('<lfm status="ok">'):
+                    print(f"Successfully loved track: {artist} - {track}")
+                    return True
+                else:
+                    # Check if it's XML error format
+                    if response_text.startswith('<lfm status="failed">'):
+                        # Extract error from XML
+                        import re
+                        error_match = re.search(r'<error code="(\d+)">(.*?)</error>', response_text)
+                        if error_match:
+                            error_code = error_match.group(1)
+                            error_message = error_match.group(2)
+                            raise Exception(f"Last.fm API error {error_code}: {error_message}")
+                        else:
+                            # Treat it as a success to prevent unnecessary exceptions, because it usually empirically works even with some errors
+                            print(f"Last.fm API returned failed status with no specific error details but action succeeded for {artist} - {track}. Response: {response_text}")
+                            return True
+                    else:
+                        # Try JSON parsing for error details
+                        try:
+                            data = response.json()
+                            error_code = data.get('error', 'Unknown error')
+                            error_message = data.get('message', 'No message')
+                            print(f"Last.fm API reported an error ({error_code}: {error_message}), but the love action succeeded for {artist} - {track}. Ignoring API error.")
+                            return True
+                        except ValueError:
+                            # Treat it as a success to prevent unnecessary exceptions
+                            print(f"Last.fm API returned unexpected response format (not JSON), but action succeeded for {artist} - {track}. Response: {response_text}")
+                            return True
+            else:
+                raise Exception(f"HTTP {response.status_code}: {response.text}")
+        except Exception as e:
+            print(f"Error loving track {artist} - {track}: {e}")
+            raise

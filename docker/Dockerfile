@@ -4,7 +4,6 @@ WORKDIR /app
 
 # System dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    kid3-cli \
     cron \
     iputils-ping \
     curl \
@@ -20,7 +19,10 @@ COPY docker/streamrip_config.toml /root/.config/streamrip/config.toml
 COPY requirements.txt .
 
 RUN pip install --no-cache-dir streamrip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt && \
+    # Ensure certifi's certificates are part of the system's trusted CAs
+    python -c "import certifi; import shutil; shutil.copyfile(certifi.where(), '/usr/local/share/ca-certificates/certifi.crt')" && \
+    update-ca-certificates
 
 # Copy the rest of the application code
 COPY . .

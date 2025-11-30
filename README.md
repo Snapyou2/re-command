@@ -1,6 +1,8 @@
 # re-command: Automated Music Recommendation System for Navidrome
 
-![Re-command Logo](web_ui/assets/logo.svg)
+<p align="center">
+  <img src="web_ui/assets/logo.svg" width="200" alt="Re-command Logo">
+</p>
 
 `re-command` is a modern, containerized music recommendation and automation system that enhances your Navidrome music experience. It automatically discovers and downloads music recommendations from [ListenBrainz](https://listenbrainz.org) and [Last.fm](https://www.last.fm) using [Streamrip](https://github.com/nathom/streamrip) or [Deemix](https://deemix.org/), then organizes and tags them in your music library.
 
@@ -9,12 +11,11 @@
 *   **Multi-Source Recommendations:** Fetches music recommendations playlists from both ListenBrainz and Last.fm. Includes a built-in cron scheduling for weekly automated downloads
 *   **Dual Download Methods:** Supports both modern Streamrip v2 and legacy Deemix for downloading from Deezer
 *   **Fresh Releases Discovery:** Automatically shows newly released albums from ListenBrainz with a quick download button
-*   **Modern Web Interface:** Clean, responsive web UI for configuration, monitoring, and manual controls
+*   **Universal Link Downloads:** Download music straight to your sever with Spotify, YouTube, Deezer, and other platforms links using Songlink API integration
+*   **Track Previews & Feedback:** Preview tracks before downloading and submit feedback manually to ListenBrainz/Last.fm
 *   **Dynamic Playlist Support:** Downloaded tracks are tagged with configurable comment markers for dynamic playlists
-*   **Automated Library Maintenance:** Removes tracks from previous recommendations based on your Navidrome ratings
+*   **Automated Library Maintenance:** Removes tracks from previous recommendations and submit scrobbling feedbacks based on your Navidrome ratings
 *   **Containerized Deployment:** Full Docker support with automated setup and configuration
-
-![Screenshot](web_ui/assets/Screenshot.jpg)
 
 ## Quick Start with Docker
 
@@ -38,19 +39,29 @@ Enter the repo:
 ```bash
 cd re-command
 ```
-Launch the docker run script:
+Recommended: configuration done through the web interface:
 ```bash
 chmod +X docker/run-re-command.sh
-sh docker/run-re-command.sh
+sh docker/run-re-command.sh --min-setup
 ```
-Then, simply enter all the required info about your navidrome instance, Deezer arl, API keys for ListenBrainz and Last.fm, music download location, etc.
+This will start the container with the minimal config to do, and you just need to enter your navidrome music folder. You can then access your server on port 5000 and use the Settings → Configuration section to set up all your preferences. 
+
+If you are fine with a lot of CLI copy-pasting, you can also run the same commands without the --min-setup flag.
 
 ### 3. Access the Web Interface
 
 Open your browser and go to `http://localhost:5000` to access the web interface.
 
 ### 4. Create a Dynamic Playlist
-In your music player or directly in Navidrome, create a playlist that includes *Comment is lb_recommendation* AND *Comment is lastfm_recommendation*. Or do a separate playlist for each. Adding another filter *Rating < 1* is quite convenient as well to get rid of the tracks you don't like.
+In your music player or directly in Navidrome, create a playlist that includes *Comment is lb_recommendation* AND *Comment is lastfm_recommendation*. Or do a separate playlist for each. Adding another filter *Rating > 1* is quite convenient as well to get rid of the tracks you don't like.
+
+## Screenshots
+
+![Web Interface](web_ui/assets/screenshot.jpg)
+
+![Playlist View](web_ui/assets/playlist.jpg)
+
+![Settings](web_ui/assets/settings.png)
 
 ## Local Development Setup (non-dockerized)
 
@@ -116,53 +127,39 @@ Then open `http://localhost:5000` in your browser.
 
 ### Configuration File (Local)
 
-```python
-# Navidrome Configuration
-ROOT_ND = "http://your-navidrome-server:4533"
-USER_ND = "your_username"
-PASSWORD_ND = "your_password"
-MUSIC_LIBRARY_PATH = "/path/to/music"
-TEMP_DOWNLOAD_FOLDER = "/path/to/temp"
+Open the config.py and fill it with the proper information.
 
-# ListenBrainz Configuration
-LISTENBRAINZ_ENABLED = True
-TOKEN_LB = "your_token"
-USER_LB = "your_username"
-
-# Last.fm Configuration
-LASTFM_ENABLED = True
-LASTFM_API_KEY = "your_key"
-LASTFM_API_SECRET = "your_secret"
-LASTFM_USERNAME = "your_username"
-
-# Deezer Configuration
-DEEZER_ARL = "your_arl_token"
-
-# Download Method
-DOWNLOAD_METHOD = "streamrip"  # or "deemix"
-```
 ### API Endpoints
 
 The web interface exposes RESTful APIs:
 
 - `GET /api/config` - Get current configuration
+- `POST /api/update_config` - Update configuration settings
 - `POST /api/update_arl` - Update Deezer ARL token
 - `POST /api/update_cron` - Update scheduling
+- `POST /api/toggle_cron` - Enable/disable automatic downloads
 - `GET /api/get_listenbrainz_playlist` - Get ListenBrainz recommendations
-- `POST /api/trigger_listenbrainz_download` - Trigger ListenBrainz download
+- `POST /api/trigger_listenbrainz_download` - Trigger ListenBrainz playlist download
 - `GET /api/get_lastfm_playlist` - Get Last.fm recommendations
-- `POST /api/trigger_lastfm_download` - Trigger Last.fm download
+- `POST /api/trigger_lastfm_download` - Trigger Last.fm playlist download
 - `GET /api/get_fresh_releases` - Get fresh releases
 - `POST /api/trigger_fresh_release_download` - Download specific release
 - `POST /api/trigger_navidrome_cleanup` - Run library cleanup
+- `POST /api/submit_listenbrainz_feedback` - Submit feedback for ListenBrainz tracks
+- `POST /api/submit_lastfm_feedback` - Submit feedback for Last.fm tracks
+- `GET /api/get_track_preview` - Get track preview URL
+- `POST /api/trigger_track_download` - Download individual track
+- `POST /api/download_from_link` - Download from universal music links
+- `GET /api/get_deezer_album_art` - Get album art from Deezer
 
 ## Usage Modes
 
 ### 1. Automated Weekly Downloads
 
 Runs automatically every Tuesday at 00:00 (configurable) to:
-- Remove unrated or low-rated tracks (≤3 stars)
-- Download new recommendations
+- Send positive and negative feedback to ListenBrainz and Last.fm for 1 star / 5 stars tracks
+- Remove unrated and low-rated tracks (≤3 stars)
+- Download new recommendations from playlist providers
 - Organize and tag new tracks
 
 ### 2. Fresh Releases Discovery
@@ -170,10 +167,35 @@ Runs automatically every Tuesday at 00:00 (configurable) to:
 Discovery of newly released albums:
 - Fetches from ListenBrainz fresh releases API each time you load the web page
 - Displays last 10 albums with album art
-- Allows selective downloading
+- Allows selective downloading (only for one week if set up in the settings)
 - Organizes into music library
 
-### 3. Manual Control
+### 3. Link Downloads
+
+Download music from any supported platform:
+- Paste a music link from your favorite music app and get them downloaded on your server using Songlink API. Links supported by service :
+  - Spotify : tracks/albums
+  - Deezer : tracks/albums
+  - Apple music : tracks/albums
+  - Tidal : tracks/albums
+  - Youtube Music : tracks/some playlists
+  - Amazon Music : very experimental
+
+### 4. Individual Track Downloads from Recommendation Playlists
+
+Via web interface:
+- Preview tracks before downloading (30-second previews)
+- Download individual tracks from recommendations
+- Submit manual feedback (like/dislike) to improve future recommendations
+
+### 5. Library Maintenance
+
+Cleans up your music library based on ratings (done automatically with the cron job, can be manually triggered in the settings or disabled):
+- Automatically removes tracks rated 3 stars or below
+- Submits feedback to ListenBrainz for disliked tracks
+- Clears recommendation tags from highly rated tracks
+
+### 6. Manual Control
 
 Via web interface or command line:
 ```bash
@@ -185,6 +207,9 @@ python re-command.py --source lastfm
 
 # Download all available fresh releases
 python re-command.py --source fresh_releases
+
+# Run library cleanup based on ratings
+python re-command.py --cleanup
 
 # Bypass playlist change detection
 python re-command.py --bypass-playlist-check
@@ -201,21 +226,11 @@ docker exec -it re-command bash
 # Edit /root/.config/streamrip/config.toml
 ```
 
-Or edit the Deemix config if you use it:
+Or edit the Deemix config if you are using it:
 ```bash
 docker exec -it re-command bash
 # Edit /root/.config/deemix/config.json
 ```
-
-### Custom Scheduling
-
-The default cron schedule runs weekly. Customize in the web interface or by editing the cron configuration in the container.
-
-### Custom Tag Comments
-
-Modify the comment tags for playlist creation:
-- `TARGET_COMMENT`: ListenBrainz tracks (default: lb_recommendation)
-- `LASTFM_TARGET_COMMENT`: Last.fm tracks (default: lastfm_recommendation)
 
 ## Troubleshooting
 
@@ -224,7 +239,6 @@ Modify the comment tags for playlist creation:
 **Container Won't Start:**
 - Check all required environment variables are set
 - Verify Navidrome server is accessible
-- Ensure Deezer ARL token is valid
 
 **Downloads Failing:**
 - Verify ARL token is fresh (not expired)
@@ -245,18 +259,16 @@ Modify the comment tags for playlist creation:
 
 ```bash
 # View container logs
-docker logs -f re-command
-
-# Access container shell
-docker exec -it re-command bash
+docker logs -f re-command-container
 ```
 
-## Contributing
+## Contributing / Roadmap
 
 Contributions are welcome! Areas for improvement:
 
+- Really looking forward sharing links to an Android re-command PWA (I have many failed attemps so PRs are welcomed !)
 - Additional music recommendations (ie LLMs + scrobbling could be interesting)
-- Performance optimizations (notably for the webUI)
+- Adding Tidal as a streamrip option to get higher resolution downloads (quite unstable for now)
 
 ### Development Setup
 
@@ -267,9 +279,3 @@ pip install -r requirements.txt
 python re-command.py  # Test CLI
 python web_ui/app.py  # Test web UI
 ```
-
-## Roadmap
-
-- [ ] **PWA Support:** Progressive Web App for mobile installation (and sharing links to re-command from mobile to the PWA for quick downloading)
-- [ ] **Single Song Listening/Downloading:** Preview tracks before download
-- [ ] **Enhanced Feedback:** Positive/negative feedback to Last.fm and Listenbrainz depending on the track rating.
