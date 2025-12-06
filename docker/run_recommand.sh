@@ -32,11 +32,16 @@ LASTFM_USERNAME=""
 LASTFM_API_KEY=""
 LASTFM_API_SECRET=""
 LASTFM_SESSION_KEY=""
+LLM_ENABLED="True"
+LLM_PROVIDER="gemini"
+LLM_API_KEY=""
+LLM_MODEL_NAME=""
+LLM_TARGET_COMMENT="llm_recommendation"
 DEEZER_ARL=""
 DOWNLOAD_METHOD="streamrip"
-MUSIC_PATH="/tmp/music"  # Default fallback path
+MUSIC_PATH="/tmp/music"
 
-# Always prompt for music library path since it's essential
+# Always prompt for music library path (can not do it later)
 echo ""
 echo "=== Volume Mounts ==="
 read -p "Enter the full path to your music library directory on the host (default: /tmp/music): " MUSIC_PATH
@@ -107,6 +112,45 @@ if [[ "$MIN_SETUP" == false ]]; then
             ;;
     esac
 
+    # Prompt for LLM configuration
+    echo ""
+    echo "=== LLM Configuration ==="
+    read -p "Enable LLM recommendations? (y/n) [default: y]: " ENABLE_LLM
+    ENABLE_LLM=${ENABLE_LLM:-y}
+    case $ENABLE_LLM in
+        [Yy]*)
+            LLM_ENABLED="True"
+            echo "Available LLM providers: gemini, openrouter"
+            read -p "Choose LLM provider (gemini/openrouter) [default: gemini]: " LLM_PROVIDER
+            LLM_PROVIDER=${LLM_PROVIDER:-gemini}
+            if [[ "$LLM_PROVIDER" == "gemini" ]]; then
+                echo "To get your Gemini API key:"
+                echo "1. Go to https://makersuite.google.com/app/apikey"
+                echo "2. Create a new API key or use an existing one."
+                read -p "Enter your Gemini API key: " LLM_API_KEY
+                read -p "Enter Gemini model name (leave blank for default 'gemini-2.5-flash'): " LLM_MODEL_NAME
+                LLM_MODEL_NAME=${LLM_MODEL_NAME:-gemini-2.5-flash}
+            elif [[ "$LLM_PROVIDER" == "openrouter" ]]; then
+                echo "To get your OpenRouter API key:"
+                echo "1. Go to https://openrouter.ai/keys"
+                echo "2. Create a new API key or use an existing one."
+                read -p "Enter your OpenRouter API key: " LLM_API_KEY
+                read -p "Enter OpenRouter model name (leave blank for default 'tngtech/deepseek-r1t2-chimera:free'): " LLM_MODEL_NAME
+                LLM_MODEL_NAME=${LLM_MODEL_NAME:-tngtech/deepseek-r1t2-chimera:free}
+            else
+                echo "Invalid provider selected. Using default Gemini."
+                LLM_PROVIDER="gemini"
+                read -p "Enter your Gemini API key: " LLM_API_KEY
+                LLM_MODEL_NAME="gemini-2.5-flash"
+            fi
+            ;;
+        *)
+            LLM_ENABLED="False"
+            LLM_API_KEY=""
+            LLM_MODEL_NAME=""
+            ;;
+    esac
+
     # Prompt for Deezer ARL
     echo ""
     echo "=== Deezer Configuration ==="
@@ -155,6 +199,11 @@ sudo docker run -d \
   -e RECOMMAND_LASTFM_API_SECRET="$LASTFM_API_SECRET" \
   -e RECOMMAND_LASTFM_USERNAME="$LASTFM_USERNAME" \
   -e RECOMMAND_LASTFM_SESSION_KEY="$LASTFM_SESSION_KEY" \
+  -e RECOMMAND_LLM_ENABLED="$LLM_ENABLED" \
+  -e RECOMMAND_LLM_PROVIDER="$LLM_PROVIDER" \
+  -e RECOMMAND_LLM_API_KEY="$LLM_API_KEY" \
+  -e RECOMMAND_LLM_MODEL_NAME="$LLM_MODEL_NAME" \
+  -e RECOMMAND_LLM_TARGET_COMMENT="$LLM_TARGET_COMMENT" \
   -e RECOMMAND_DEEZER_ARL="$DEEZER_ARL" \
   -e RECOMMAND_DOWNLOAD_METHOD="$DOWNLOAD_METHOD" \
   -e RECOMMAND_TARGET_COMMENT="lb_recommendation" \

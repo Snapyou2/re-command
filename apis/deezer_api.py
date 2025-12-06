@@ -99,7 +99,6 @@ class DeezerAPI:
                         return data['data'][0]['link']
             except Exception as e:
                 print(f"Error during Deezer search with query '{query}': {e}")
-        print(f"Deezer API: No track link found for artist '{artist}' and title '{title}' after all queries.", file=sys.stderr)
         return None
 
     async def get_deezer_track_details(self, track_id):
@@ -245,7 +244,6 @@ class DeezerAPI:
 
         Returns:
             The Deezer album link if found, otherwise None.
-            The Deezer album link if found, otherwise None.
         """
         print(f"DeezerAPI: Entering get_deezer_album_link for artist='{artist}', album='{album_title}'", file=sys.stderr)
         self._log_to_file(f"DeezerAPI: Entering get_deezer_album_link for artist='{artist}', album='{album_title}'")
@@ -312,13 +310,11 @@ class DeezerAPI:
 
         for query in unique_search_queries:
             params = {"q": query}
-            print(f"Deezer API: Searching for album with query: '{query}'", file=sys.stderr)
             self._log_to_file(f"Deezer API: Searching for album with query: '{query}'")
             try:
                 response = await self._make_request_with_retries(self.search_url + "/album", params=params)
                 if response:
                     data = response.json()
-                    print(f"Deezer API: Response for album query '{query}': {data}", file=sys.stderr)
                     self._log_to_file(f"Deezer API: Response for album query '{query}': {data}")
                     if data.get('data') and len(data['data']) > 0:
                         first_result = data['data'][0]
@@ -336,18 +332,14 @@ class DeezerAPI:
                         )
                         
                         if album_title_match and artist_name_match:
-                            print(f"Deezer API: Found a matching album link: {first_result['link']}", file=sys.stderr)
                             self._log_to_file(f"Deezer API: Found a matching album link: {first_result['link']}")
                             return first_result['link'], first_result # Return both link and full result
                         else:
-                            print(f"Deezer API: First result '{found_artist_name} - {found_album_title}' not a close enough match for normalized '{original_artist_lower} - {original_album_lower}'. Album match: {album_title_match}, Artist match: {artist_name_match}. Trying next query...", file=sys.stderr)
                             self._log_to_file(f"Deezer API: First result '{found_artist_name} - {found_album_title}' not a close enough match for normalized '{original_artist_lower} - {original_album_lower}'. Album match: {album_title_match}, Artist match: {artist_name_match}. Trying next query...")
 
 
             except Exception as e:
-                print(f"Error during Deezer album search with query '{query}': {e}", file=sys.stderr)
                 self._log_to_file(f"Error during Deezer album search with query '{query}': {e}")
-        print(f"Deezer API: No album link found for artist '{artist}' and album '{album_title}' after all queries.", file=sys.stderr)
         return None, None # Return None for both link and result if not found
 
     async def get_deezer_album_tracks(self, album_id):
@@ -364,7 +356,6 @@ class DeezerAPI:
         next_page_url = f"https://api.deezer.com/album/{album_id}/tracks"
         
         while next_page_url:
-            print(f"Deezer API: Fetching album tracks from: {next_page_url}", file=sys.stderr)
             try:
                 response = await self._make_request_with_retries(next_page_url)
                 if response:
@@ -373,20 +364,15 @@ class DeezerAPI:
                         tracks.extend(data['data'])
                         next_page_url = data.get('next')
                     else:
-                        print(f"Deezer API: No track data found for album ID {album_id} on page: {next_page_url}", file=sys.stderr)
                         break
                 else:
-                    print(f"Deezer API: Failed to get response for album tracks on page: {next_page_url}", file=sys.stderr)
                     break
             except Exception as e:
-                print(f"Error fetching album tracks from Deezer for album ID {album_id}: {e}", file=sys.stderr)
                 return None
-        
+
         if not tracks:
-            print(f"Deezer API: No tracks found for album ID {album_id} after all attempts.", file=sys.stderr)
             return []
-            
-        print(f"Deezer API: Found {len(tracks)} tracks for album ID {album_id}.", file=sys.stderr)
+
         return tracks
 
     async def get_deezer_album_tracklist_by_search(self, artist, album_title):
@@ -416,7 +402,6 @@ class DeezerAPI:
             next_page_url = self.search_url + "/track"
             
             while next_page_url:
-                print(f"Deezer API: Searching for album tracks with query: '{query}' from: {next_page_url}", file=sys.stderr)
                 try:
                     response = await self._make_request_with_retries(next_page_url, params=params if next_page_url == self.search_url + "/track" else None)
                     if response:
@@ -433,18 +418,14 @@ class DeezerAPI:
                                     })
                                     found_track_ids.add(track_item.get('id'))
                             next_page_url = data.get('next')
-                            params = None 
+                            params = None
                         else:
-                            print(f"Deezer API: No track data found for query '{query}' on page: {next_page_url}", file=sys.stderr)
                             break
                     else:
-                        print(f"Deezer API: Failed to get response for album track search on page: {next_page_url}", file=sys.stderr)
                         break
                 except Exception as e:
-                    print(f"Error fetching album tracks by search for query '{query}': {e}", file=sys.stderr)
-                    break 
-        
-        print(f"Deezer API: Found {len(tracks)} tracks for album '{album_title}' by '{artist}' via search.", file=sys.stderr)
+                    break
+
         return tracks
 
     async def check_album_download_availability(self, artist, album_title):

@@ -899,6 +899,23 @@
             <div id="lastFmPlaylist" class="playlist-content"></div>
         </div>
 
+        <div id="llmSection" class="playlist-section" style="display: none;">
+            <div class="playlist-header">
+                <div id="llmHeaderContent">
+                    <h2>LLM Suggestions</h2>
+                </div>
+                <div>
+                    <span id="llmStatus" class="playlist-status"></span>
+                    <button id="llmToggle" class="playlist-toggle" onclick="togglePlaylist('llm')" style="display: none;">▼</button>
+                </div>
+            </div>
+            <div id="llmButtons" class="playlist-controls">
+                <button onclick="discoverLlmPlaylist()">Fetch LLM Suggestions</button>
+                <button onclick="downloadLlmPlaylist()" style="display: none;" class="download-btn">Download All Suggestions</button>
+            </div>
+            <div id="llmPlaylist" class="playlist-content"></div>
+        </div>
+
         <!-- Download Queue Section -->
         <div id="downloadQueueSection" class="playlist-section" style="display: none;">
             <div class="playlist-header">
@@ -949,7 +966,7 @@
                             <input type="text" id="deezerArl" placeholder="Your Deezer ARL token">
                         </div>
                         <div class="form-group">
-                            <label for="downloadMethod">Streamrip/Deemix selector:</label>
+                            <label for="downloadMethod">Downloader:</label>
                             <select id="downloadMethod" style="padding: 8px; border-radius: 4px; background-color: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color);">
                                 <option value="streamrip">Streamrip</option>
                                 <option value="deemix">Deemix</option>
@@ -1007,6 +1024,30 @@
                                     <span class="help-icon" title="Optional: OAuth token for Last.fm API access. If empty, you'll be prompted to authorize the app interactively">ℹ️</span>
                                 </label>
                                 <input type="text" id="lastfmSessionKey" placeholder="Your Last.fm session key (optional)">
+                            </div>
+                        </div>
+
+                        <h3>LLM Suggestions Settings</h3>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="llmEnabled"> Enable LLM Suggestions
+                            </label>
+                        </div>
+                        <div id="llmOptions" style="display: none; padding-left: 20px; border-left: 2px solid var(--border-color); margin-left: 5px;">
+                            <div class="form-group">
+                                <label for="llmProvider">LLM Provider:</label>
+                                <select id="llmProvider" style="padding: 8px; border-radius: 4px; background-color: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color);">
+                                    <option value="gemini">Gemini</option>
+                                    <option value="openrouter">OpenRouter</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="llmModelName">Model Name (optional):</label>
+                                <input type="text" id="llmModelName" placeholder="e.g., gemini-2.5-flash">
+                            </div>
+                            <div class="form-group">
+                                <label for="llmApiKey">API Key:</label>
+                                <input type="password" id="llmApiKey" placeholder="Your LLM API Key">
                             </div>
                         </div>
 
@@ -1107,6 +1148,7 @@
             loadConfiguration(); // Ensure configuration is loaded when modal opens
             updateListenBrainzVisibility(); // Update visibility on modal open
             updateLastFmVisibility(); // Update visibility on modal open
+            updateLlmVisibility();
         }
 
         function closeSettingsModal() {
@@ -1135,18 +1177,21 @@
             document.getElementById('listenbrainzOptions').style.display = isEnabled ? 'block' : 'none';
         }
 
+        function updateLlmVisibility() {
+            const isEnabled = document.getElementById('llmEnabled').checked;
+            document.getElementById('llmOptions').style.display = isEnabled ? 'block' : 'none';
+        }
+
         function updateLastFmVisibility() {
             const isEnabled = document.getElementById('lastfmEnabled').checked;
             document.getElementById('lastfmOptions').style.display = isEnabled ? 'block' : 'none';
         }
 
-        // Add event listeners for the checkboxes
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('listenbrainzEnabled').addEventListener('change', updateListenBrainzVisibility);
             document.getElementById('lastfmEnabled').addEventListener('change', updateLastFmVisibility);
-        });
-
-        // Close modals when clicking outside of them
+            document.getElementById('llmEnabled').addEventListener('change', updateLlmVisibility);
+        });        // Close modals when clicking outside of them
         window.onclick = function(event) {
             const settingsModal = document.getElementById('settingsModal');
             // Check if settings modal needs to be closed
@@ -1199,20 +1244,28 @@
             if (downloadQueue.length === 0) {
                 queueContent.innerHTML = '<p style="text-align: center; color: #b0b0b0;">No downloads in queue.</p>';
             } else {
-                queueContent.innerHTML = downloadQueue.map(item => `
-                    <div class="download-queue-item ${item.status}">
-                        <div class="track-info">
-                            <div class="track-title">${item.title}</div>
-                            <div class="track-artist">${item.artist}</div>
-                            ${item.status === 'failed' && item.message ? `<div class="error-message" style="color: var(--error-color); font-size: 0.85em; margin-top: 5px;">Error: ${item.message}</div>` : ''}
+                queueContent.innerHTML = downloadQueue.map(item => {
+                    let progressText = '';
+                    if (item.current_track_count !== undefined && item.total_track_count !== undefined) {
+                        progressText = `${item.current_track_count}/${item.total_track_count} tracks downloaded`;
+                    }
+                    return `
+                        <div class="download-queue-item ${item.status}">
+                            <div class="track-info">
+                                <div class="track-title">${item.title}</div>
+                                <div class="track-artist">${item.artist}</div>
+                                ${progressText ? `<div class="progress-text" style="font-size: 0.85em; margin-top: 5px; color: #b0b0b0;">${progressText}</div>` : ''}
+                                ${item.status === 'failed' && item.message ? `<div class="error-message" style="color: var(--error-color); font-size: 0.85em; margin-top: 5px;">Error: ${item.message}</div>` : ''}
+                                ${item.status === 'completed' && item.message ? `<div class="success-message" style="color: var(--success-color); font-size: 0.85em; margin-top: 5px;">${item.message}</div>` : ''}
+                            </div>
+                            <div class="status-icon ${item.status}">
+                                ${item.status === 'in_progress' ? '<div class="spinner"></div>' : ''}
+                                ${item.status === 'completed' ? '<svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 12.6111L8.92308 17.5L20 6.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ''}
+                                ${item.status === 'failed' ? '<svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 9V13M12 15V15.01M22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ''}
+                            </div>
                         </div>
-                        <div class="status-icon ${item.status}">
-                            ${item.status === 'in_progress' ? '<div class="spinner"></div>' : ''}
-                            ${item.status === 'completed' ? '<svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 12.6111L8.92308 17.5L20 6.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ''}
-                            ${item.status === 'failed' ? '<svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 9V13M12 15V15.01M22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ''}
-                        </div>
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
             }
         }
 
@@ -1296,6 +1349,104 @@
             showMessage(data.status, data.message);
         }
 
+        let llmAbortController = null; // Global variable to store the abort controller
+
+        async function discoverLlmPlaylist() {
+            const playlistDiv = document.getElementById('llmPlaylist');
+            const statusDiv = document.getElementById('llmStatus');
+            const toggleBtn = document.getElementById('llmToggle');
+
+            // Cancel any existing request
+            if (llmAbortController) {
+                llmAbortController.abort();
+            }
+
+            // Create new abort controller for this request
+            llmAbortController = new AbortController();
+
+            playlistDiv.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100px;"><div class="spinner" style="margin-right: 8px;"></div><span>Querying the LLM for recommendations... (this can take a while)</span><button id="cancelLlmBtn" style="margin-left: 15px; padding: 5px 10px; background-color: var(--error-color); color: white; border: none; border-radius: 4px; cursor: pointer;" onclick="cancelLlmQuery()">Cancel</button></div>';
+            statusDiv.textContent = '';
+            toggleBtn.style.display = 'none';
+
+            try {
+                const response = await fetch('/api/get_llm_playlist', {
+                    signal: llmAbortController.signal
+                });
+                const data = await response.json();
+
+                if (data.status === 'success' && data.recommendations.length > 0) {
+                    playlistDiv.innerHTML = data.recommendations.map((song, index) => {
+                        const caaReleaseMbid = song.caa_release_mbid || '';
+                        const caaId = song.caa_id || '';
+                        return `<div class="playlist-item">
+                            <div class="album-art-container">
+                                <img src="/assets/default-album.svg" alt="Album Art" class="album-art" 
+                                     id="llm-album-art-${index}" 
+                                     data-caa-release-mbid="${caaReleaseMbid}" 
+                                     data-caa-id="${caaId}"
+                                     data-artist="${song.artist.replace(/"/g, '&quot;')}" data-album="${song.album.replace(/"/g, '&quot;')}">
+                                <div class="album-art-spinner"></div>
+                            </div>
+                            <div class="track-info">
+                                <div class="track-title">${song.title}</div>
+                                <div class="track-artist">${song.artist}</div>
+                                <div class="track-album">${song.album}</div>
+                            </div>
+                            <div class="feedback-buttons">
+                                <button class="feedback-btn play-btn" onclick="playTrackPreview('${song.artist.replace(/'/g, "\\'")}', '${song.title.replace(/'/g, "\\'")}', this)" title="Play preview">
+                                    <svg width="20px" height="20px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="feedback-icon">
+                                        <path d="M5 3L19 12L5 21V3Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </button>
+                                <button class="feedback-btn download-btn" onclick="downloadIndividualTrack('${song.artist.replace(/'/g, "\\'")}', '${song.title.replace(/'/g, "\\'")}', this, false, 'LLM')" title="Download track">
+                                    <svg width="20px" height="20px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="feedback-icon"><path d="M17 17H17.01M17.4 14H18C18.9319 14 19.3978 14 19.7654 14.1522C20.2554 14.3552 20.6448 14.7446 20.8478 15.2346C21 15.6022 21 16.0681 21 17C21 17.9319 21 18.3978 20.8478 18.7654C20.6448 19.2554 20.2554 19.6448 19.7654 19.8478C19.3978 20 18.9319 20 18 20H6C5.06812 20 4.60218 20 4.23463 19.8478C3.74458 19.6448 3.35523 19.2554 3.15224 18.7654C3 18.3978 3 17.9319 3 17C3 16.0681 3 15.6022 3.15224 15.2346C3.35523 14.7446 3.74458 14.3552 4.23463 14.1522C4.60218 14 5.06812 14 6 14H6.6M12 15V4M12 15L9 12M12 15L15 12" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                </button>
+                                <button class="feedback-btn like-btn" onclick="submitListenBrainzFeedback(this, '${song.recording_mbid || 'null'}', 1)" title="Like this track on ListenBrainz">
+                                    <svg width="20px" height="20px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="feedback-icon">
+                                        <path fill-rule="evenodd" clip-rule="evenodd" d="M12 6.00019C10.2006 3.90317 7.19377 3.2551 4.93923 5.17534C2.68468 7.09558 2.36727 10.3061 4.13778 12.5772C5.60984 14.4654 10.0648 18.4479 11.5249 19.7369C11.6882 19.8811 11.7699 19.9532 11.8652 19.9815C11.9483 20.0062 12.0393 20.0062 12.1225 19.9815C12.2178 19.9532 12.2994 19.8811 12.4628 19.7369C13.9229 18.4479 18.3778 14.4654 19.8499 12.5772C21.6204 10.3061 21.3417 7.07538 19.0484 5.17534C16.7551 3.2753 13.7994 3.90317 12 6.00019Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </button>
+                                <button class="feedback-btn dislike-btn" onclick="submitListenBrainzFeedback(this, '${song.recording_mbid || 'null'}', -1)" title="Dislike this track on ListenBrainz">
+                                    <svg width="20px" height="20px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="feedback-icon">
+                                        <path d="M12 6.00011L14 8.00011L10 10.0001L13 13.0001M12 6.00011C10.2006 3.90309 7.19377 3.25515 4.93923 5.17539C2.68468 7.09563 2.36727 10.3062 4.13778 12.5772C5.60984 14.4655 10.0648 18.4479 11.5249 19.7369C11.6882 19.8811 11.7699 19.9532 11.8652 19.9816C11.9483 20.0063 12.0393 20.0063 12.1225 19.9816C12.2178 19.9532 12.2994 19.8811 12.4628 19.7369C13.9229 18.4479 18.3778 14.4655 19.8499 12.5772C21.6204 10.3062 21.3417 7.07543 19.0484 5.17539C16.7551 3.27535 13.7994 3.90309 12 6.00011Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>`;
+                    }).join('');
+                    document.getElementById('llmButtons').innerHTML = '<button class="download-btn" id="llmDownloadBtn" onclick="downloadLlmPlaylist()">Download All</button><button onclick="discoverLlmPlaylist()">Get New Suggestions</button>';
+                    statusDiv.textContent = `${data.recommendations.length} songs recommended by LLM.`;
+                    toggleBtn.style.display = 'inline-block';
+                    lazyLoadAlbumArts('llmPlaylist');
+                } else {
+                    playlistDiv.innerHTML = `<div class="playlist-item">${data.message}</div>`;
+                    statusDiv.textContent = 'No recommendations found';
+                }
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    playlistDiv.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100px;"><span>LLM query cancelled</span></div>';
+                    statusDiv.textContent = 'Query cancelled';
+                } else {
+                    playlistDiv.innerHTML = `<div class="playlist-item">Network error: ${error.message}</div>`;
+                    statusDiv.textContent = 'Network error';
+                }
+            }
+        }
+
+        function cancelLlmQuery() {
+            if (llmAbortController) {
+                llmAbortController.abort();
+                showMessage('info', 'LLM query cancelled');
+            }
+        }
+
+        async function downloadLlmPlaylist() {
+            showMessage('info', 'LLM playlist download started...');
+            const response = await fetch('/api/trigger_llm_download', { method: 'POST' });
+            const data = await response.json();
+            showMessage(data.status, data.message);
+        }
+
         async function discoverListenBrainzPlaylist() {
             await getListenBrainzPlaylist(true);
         }
@@ -1338,8 +1489,8 @@
                                      id="lb-album-art-${index}" 
                                      data-caa-release-mbid="${caaReleaseMbid}" 
                                      data-caa-id="${caaId}"
-                                     data-artist="${song.artist.replace(/"/g, '"')}"
-                                     data-album="${song.album.replace(/"/g, '"')}">
+                                     data-artist="${song.artist.replace(/"/g, '&quot;')}"
+                                     data-album="${song.album.replace(/"/g, '&quot;')}">
                                 <div class="album-art-spinner"></div>
                             </div>
                             <div class="track-info">
@@ -1353,7 +1504,7 @@
                                         <path d="M5 3L19 12L5 21V3Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                                     </svg>
                                 </button>
-                                <button class="feedback-btn download-btn" onclick="downloadIndividualTrack('${song.artist.replace(/'/g, "\\'")}', '${song.title.replace(/'/g, "\\'")}', this)" title="Download track">
+                                <button class="feedback-btn download-btn" onclick="downloadIndividualTrack('${song.artist.replace(/'/g, "\\'")}', '${song.title.replace(/'/g, "\\'")}', this, true, 'ListenBrainz')" title="Download track">
                                     <svg width="20px" height="20px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="feedback-icon">
                                         <path d="M17 17H17.01M17.4 14H18C18.9319 14 19.3978 14 19.7654 14.1522C20.2554 14.3552 20.6448 14.7446 20.8478 15.2346C21 15.6022 21 16.0681 21 17C21 17.9319 21 18.3978 20.8478 18.7654C20.6448 19.2554 20.2554 19.6448 19.7654 19.8478C19.3978 20 18.9319 20 18 20H6C5.06812 20 4.60218 20 4.23463 19.8478C3.74458 19.6448 3.35523 19.2554 3.15224 18.7654C3 18.3978 3 17.9319 3 17C3 16.0681 3 15.6022 3.15224 15.2346C3.35523 14.7446 3.74458 14.3552 4.23463 14.1522C4.60218 14 5.06812 14 6 14H6.6M12 15V4M12 15L9 12M12 15L15 12" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>                                    </svg>
                                 </button>
@@ -1407,7 +1558,8 @@
             // Show immediate feedback message
             showMessage('info', 'Download started...');
             // Add to client-side queue display immediately
-            downloadQueue.push({ artist: 'ListenBrainz Playlist', title: 'Multiple Tracks', status: 'in_progress' });
+            const downloadId = `listenbrainz-${Date.now()}`;
+            downloadQueue.push({ id: downloadId, artist: 'ListenBrainz Playlist', title: 'Multiple Tracks', status: 'in_progress' });
             updateDownloadQueueUI();
 
             const response = await fetch('/api/trigger_listenbrainz_download', {
@@ -1415,11 +1567,6 @@
             });
             const data = await response.json();
             // The polling function will update the actual status
-            setTimeout(() => {
-                downloadBtn.innerHTML = 'Download all';
-                downloadBtn.disabled = false;
-                showMessage(data.status, data.message);
-            }, 2000);
             setTimeout(() => {
                 downloadBtn.innerHTML = 'Download all';
                 downloadBtn.disabled = false;
@@ -1453,7 +1600,7 @@
 
                         return `<div class="playlist-item">
                             <div class="album-art-container">
-                                <img src="${albumArtSrc}" alt="Album Art" class="album-art ${albumArtLoadedClass}" id="lf-album-art-${index}" data-artist="${song.artist}" data-title="${song.title}">
+                                <img src="${albumArtSrc}" alt="Album Art" class="album-art ${albumArtLoadedClass}" id="lf-album-art-${index}" data-artist="${song.artist.replace(/"/g, '&quot;')}" data-album="${song.album.replace(/"/g, '&quot;')}" data-title="${song.title.replace(/"/g, '&quot;')}">
                                 <div class="album-art-spinner" style="display: ${spinnerDisplay};"></div>
                             </div>
                             <div class="track-info">
@@ -1467,7 +1614,7 @@
                                         <path d="M5 3L19 12L5 21V3Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                                     </svg>
                                 </button>
-                                <button class="feedback-btn download-btn" onclick="downloadIndividualTrack('${song.artist.replace(/'/g, "\\'")}', '${song.title.replace(/'/g, "\\'")}', this)" title="Download track">
+                                <button class="feedback-btn download-btn" onclick="downloadIndividualTrack('${song.artist.replace(/'/g, "\\'")}', '${song.title.replace(/'/g, "\\'")}', this, false, 'Last.fm')" title="Download track">
                                     <svg width="20px" height="20px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="feedback-icon">
                                         <path d="M17 17H17.01M17.4 14H18C18.9319 14 19.3978 14 19.7654 14.1522C20.2554 14.3552 20.6448 14.7446 20.8478 15.2346C21 15.6022 21 16.0681 21 17C21 17.9319 21 18.3978 20.8478 19.8478C20.6448 19.2554 20.2554 19.6448 19.7654 19.8478C19.3978 20 18.9319 20 18 20H6C5.06812 20 4.60218 20 4.23463 19.8478C3.74458 19.6448 3.35523 19.2554 3.15224 19.2346C3 18.6022 3 18.0681 3 17C3 16.0681 3 15.6022 3.15224 15.2346C3.35523 14.7446 3.74458 14.3552 4.23463 14.1522C4.60218 14 5.06812 14 6 14H6.6M12 15V4M12 15L9 12M12 15L15 12" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>                                    </svg>
                                 </button>
@@ -1514,7 +1661,8 @@
             // Show immediate feedback message
             showMessage('info', 'Download started...');
             // Add to client-side queue display immediately
-            downloadQueue.push({ artist: 'Last.fm Playlist', title: 'Multiple Tracks', status: 'in_progress' });
+            const downloadId = `lastfm-${Date.now()}`;
+            downloadQueue.push({ id: downloadId, artist: 'Last.fm Playlist', title: 'Multiple Tracks', status: 'in_progress' });
             updateDownloadQueueUI();
 
             const response = await fetch('/api/trigger_lastfm_download', {
@@ -1674,39 +1822,7 @@
             }
         }
 
-        async function downloadIndividualTrack(artist, title, buttonElement) {
-            try {
-                // Update button to show loading state
-                const originalContent = buttonElement.innerHTML;
-                buttonElement.innerHTML = '<div class="spinner"></div>';
-                buttonElement.disabled = true;
-
-                // Show immediate feedback message
-                showMessage('info', 'Download started...');
-
-                const response = await fetch('/api/trigger_track_download', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ artist: artist, title: title })
-                });
-                const data = await response.json();
-                showMessage(data.status, data.message);
-
-                // Reset button after a delay
-                setTimeout(() => {
-                    buttonElement.innerHTML = originalContent;
-                    buttonElement.disabled = false;
-                }, 2000);
-            } catch (error) {
-                console.error('Error downloading track:', error);
-                showMessage('error', 'Failed to download track');
-                // Reset button on error
-                buttonElement.innerHTML = originalContent;
-                buttonElement.disabled = false;
-            }
-        }
-
-        async function downloadIndividualTrack(artist, title, buttonElement) {
+        async function downloadIndividualTrack(artist, title, buttonElement, lb_recommendation = false, source = 'Manual') {
             try {
                 // Update button to show loading state
                 const originalContent = buttonElement.innerHTML;
@@ -1722,7 +1838,7 @@
                 const response = await fetch('/api/trigger_track_download', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ artist: artist, title: title })
+                    body: JSON.stringify({ artist: artist, title: title, lb_recommendation: lb_recommendation, source: source })
                 });
                 const data = await response.json();
                 showMessage(data.status, data.message);
@@ -1770,8 +1886,8 @@
                                                  id="fr-album-art-${index}"
                                                  data-caa-release-mbid="${caaReleaseMbid}"
                                                  data-caa-id="${caaId}"
-                                                 data-artist="${release.artist_credit_name.replace(/"/g, '"')}"
-                                                 data-album="${release.release_name.replace(/"/g, '"')}">
+                                                 data-artist="${release.artist_credit_name.replace(/"/g, '&quot;')}"
+                                                 data-album="${release.release_name.replace(/"/g, '&quot;')}">
                                             <div class="release-art-spinner"></div>
                                         </div>
                                         <div class="release-info">
@@ -1942,6 +2058,11 @@
             document.getElementById('albumRecommendationEnabled').checked = config.ALBUM_RECOMMENDATION_ENABLED || false;
             document.getElementById('hideDownloadFromLink').checked = config.HIDE_DOWNLOAD_FROM_LINK || false;
             document.getElementById('hideFreshReleases').checked = config.HIDE_FRESH_RELEASES || false;
+            document.getElementById('llmEnabled').checked = config.LLM_ENABLED || false;
+            document.getElementById('llmProvider').value = config.LLM_PROVIDER || 'gemini';
+            document.getElementById('llmModelName').value = config.LLM_MODEL_NAME || '';
+            document.getElementById('llmApiKey').value = config.LLM_API_KEY ? '••••••••' : '';
+
 
             // Set global variable for album recommendation setting
             window.albumRecommendationEnabled = config.ALBUM_RECOMMENDATION_ENABLED || false;
@@ -1952,6 +2073,7 @@
             // Update submenu visibility for settings modal
             updateListenBrainzVisibility();
             updateLastFmVisibility();
+            updateLlmVisibility();
         }
 
         function updateUIVisibility(config) {
@@ -1960,6 +2082,7 @@
             const hasListenBrainz = config.LISTENBRAINZ_ENABLED && ((config.TOKEN_LB && config.TOKEN_LB !== '') || (config.USER_LB && config.USER_LB !== ''));
             const hasLastFm = config.LASTFM_ENABLED && ((config.LASTFM_API_KEY && config.LASTFM_API_KEY !== '') || (config.LASTFM_API_SECRET && config.LASTFM_API_SECRET !== '') || (config.LASTFM_USERNAME && config.LASTFM_USERNAME !== ''));
             const hasAnyConfig = hasNavidrome || hasListenBrainz || hasLastFm || (config.DEEZER_ARL && config.DEEZER_ARL !== '');
+            const llmSection = document.getElementById('llmSection');
 
             // Show welcome message if no configuration is set
             const welcomeMessage = document.getElementById('welcomeMessage');
@@ -1973,6 +2096,7 @@
             const freshReleasesSection = document.getElementById('freshReleasesSection');
             const listenBrainzSection = document.getElementById('listenBrainzSection');
             const lastFmSection = document.getElementById('lastFmSection');
+            const llmHeaderContent = document.getElementById('llmHeaderContent');
 
             // ListenBrainz section is shown if enabled, independent of fresh releases
             if (config.LISTENBRAINZ_ENABLED) {
@@ -1992,6 +2116,19 @@
                 lastFmSection.style.display = 'block';
             } else {
                 lastFmSection.style.display = 'none';
+            }
+
+            if (config.LLM_ENABLED) {
+                llmSection.style.display = 'block';
+                if (config.LLM_PROVIDER === 'gemini') {
+                    llmHeaderContent.innerHTML = '<img src="/assets/gemini_logo.svg" alt="Gemini" class="logo service-logo"><h2></h2>';
+                } else if (config.LLM_PROVIDER === 'openrouter') {
+                    llmHeaderContent.innerHTML = '<img src="/assets/openrouter_logo.svg" alt="OpenRouter" class="logo service-logo"><h2></h2>';
+                } else {
+                    llmHeaderContent.innerHTML = '<h2>LLM Suggestions</h2>';
+                }
+            } else {
+                llmSection.style.display = 'none';
             }
 
             // Show/hide downloadFromLinkSection based on configuration and hide option
@@ -2020,7 +2157,11 @@
                 DOWNLOAD_METHOD: document.getElementById('downloadMethod').value,
                 ALBUM_RECOMMENDATION_ENABLED: document.getElementById('albumRecommendationEnabled').checked,
                 HIDE_DOWNLOAD_FROM_LINK: document.getElementById('hideDownloadFromLink').checked,
-                HIDE_FRESH_RELEASES: document.getElementById('hideFreshReleases').checked
+                HIDE_FRESH_RELEASES: document.getElementById('hideFreshReleases').checked,
+                LLM_ENABLED: document.getElementById('llmEnabled').checked,
+                LLM_PROVIDER: document.getElementById('llmProvider').value,
+                LLM_MODEL_NAME: document.getElementById('llmModelName').value.trim(),
+                LLM_API_KEY: document.getElementById('llmApiKey').value.trim()
             };
 
             try {

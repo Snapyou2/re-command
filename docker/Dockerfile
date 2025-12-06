@@ -5,6 +5,7 @@ WORKDIR /app
 # System dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     cron \
+    rsyslog \
     iputils-ping \
     curl \
     ca-certificates \

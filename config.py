@@ -23,6 +23,13 @@ LASTFM_USERNAME = ""
 LASTFM_PASSWORD_HASH = ""
 LASTFM_SESSION_KEY = ""
 
+# LLM Suggestions Settings
+LLM_ENABLED = True
+LLM_PROVIDER = 'gemini'
+LLM_API_KEY = ''
+LLM_MODEL_NAME = ''
+LLM_TARGET_COMMENT = 'llm_recommendation'
+
 # Deezer Configuration
 DEEZER_ARL = ""
 

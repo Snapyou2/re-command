@@ -3,7 +3,7 @@ import time
 import os
 import requests
 import webbrowser
-import importlib
+import asyncio
 import concurrent.futures
 import hashlib
 from apis.deezer_api import DeezerAPI
@@ -142,7 +142,7 @@ class LastFmAPI:
             print(f"Unexpected error in Last.fm API: {e}")
             return []
 
-    def get_lastfm_recommendations(self):
+    async def get_lastfm_recommendations(self):
         """Fetches recommended tracks from Last.fm and returns them as a list."""
         if not self._lastfm_enabled:
             return []
@@ -170,16 +170,15 @@ class LastFmAPI:
             print("No recommendations found from Last.fm.")
             return []
 
-        # Parallel album arts fetching
-        def fetch_art(track):
-            import asyncio
-            deezer_api = DeezerAPI()
-            details = asyncio.run(deezer_api.get_deezer_track_details_from_artist_title(track["artist"], track["title"]))
-            return details
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            album_details = list(executor.map(fetch_art, recommended_tracks))
-
+        # Asynchronously fetch album art in parallel
+        deezer_api = DeezerAPI()
+        tasks = [
+            deezer_api.get_deezer_track_details_from_artist_title(
+                track["artist"], track["title"]
+            )
+            for track in recommended_tracks
+        ]
+        album_details = await asyncio.gather(*tasks)
         songs = []
         for i, track in enumerate(recommended_tracks):
             song = {

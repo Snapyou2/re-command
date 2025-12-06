@@ -7,3 +7,4 @@ mutagen
 Flask[async]
 gunicorn
 certifi
+google-generativeai

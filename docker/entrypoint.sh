@@ -31,6 +31,14 @@ echo "LASTFM_PASSWORD_HASH = os.getenv(\"LASTFM_PASSWORD_HASH\", \"${RECOMMAND_L
 echo "LASTFM_SESSION_KEY = os.getenv(\"LASTFM_SESSION_KEY\", \"${RECOMMAND_LASTFM_SESSION_KEY:-}\")" >> config.py
 echo "" >> config.py
 
+# LLM Suggestions Settings
+echo "LLM_ENABLED = os.getenv(\"LLM_ENABLED\", \"${RECOMMAND_LLM_ENABLED:-false}\").lower() == \"true\"" >> config.py
+echo "LLM_PROVIDER = os.getenv(\"LLM_PROVIDER\", \"${RECOMMAND_LLM_PROVIDER:-gemini}\")" >> config.py
+echo "LLM_API_KEY = os.getenv(\"LLM_API_KEY\", \"${RECOMMAND_LLM_API_KEY:-}\")" >> config.py
+echo "LLM_MODEL_NAME = os.getenv(\"LLM_MODEL_NAME\", \"${RECOMMAND_LLM_MODEL_NAME:-}\")" >> config.py
+echo "LLM_TARGET_COMMENT = os.getenv(\"LLM_TARGET_COMMENT\", \"${RECOMMAND_LLM_TARGET_COMMENT:-llm_recommendation}\")" >> config.py
+echo "" >> config.py
+
 # Deezer Configuration (Optional - can be configured via web UI)
 echo "DEEZER_ARL = os.getenv(\"DEEZER_ARL\", \"${RECOMMAND_DEEZER_ARL:-}\")" >> config.py
 echo "" >> config.py
@@ -67,14 +75,12 @@ echo "DEEZER_MAX_CONCURRENT_REQUESTS = int(os.getenv(\"DEEZER_MAX_CONCURRENT_REQ
 echo "" >> config.py
 
 # Set up cron job
-# Run every Tuesday at 00:00 PM (Usually guarantees that the LB playlist is released)
-mkdir -p /app/logs # Create logs directory
-touch /app/logs/re-command.log # Ensure log file exists
-
-# Redirect cronjob output to the new log file in /app/logs
-echo "0 0 * * 2 /usr/local/bin/python3 /app/re-command.py >> /app/logs/re-command.log 2>&1" > /etc/cron.d/re-command-cron
+# Run every Tuesday at 00:00 (Usually guarantees that the LB playlist is released)
+mkdir -p /app/logs
+touch /app/logs/re-command.log
+# Run cleanup first, then recommendations
+echo "0 0 * * 2 root /usr/local/bin/python3 /app/re-command.py --cleanup >> /app/logs/re-command.log 2>&1 && /usr/local/bin/python3 /app/re-command.py >> /app/logs/re-command.log 2>&1" > /etc/cron.d/re-command-cron
 chmod 0644 /etc/cron.d/re-command-cron
-crontab /etc/cron.d/re-command-cron
 
 # Replace ARL placeholder in streamrip_config.toml
 if [ -n "${RECOMMAND_DEEZER_ARL}" ]; then
@@ -101,8 +107,14 @@ else
     jq '.maxBitrate = "1"' "$DEEMIX_CONFIG_PATH" > "$DEEMIX_CONFIG_PATH.tmp" && mv "$DEEMIX_CONFIG_PATH.tmp" "$DEEMIX_CONFIG_PATH"
 fi
 
+# Start syslog service (required for cron)
+rsyslogd
+
+# Give syslog a moment to start
+sleep 2
+
 # Start cron service
-cron -f &
+cron &
 
 # Start Gunicorn server for the Flask app in the background
 gunicorn --bind 0.0.0.0:5000 --timeout 300 "web_ui.app:app" &

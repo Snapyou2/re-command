@@ -7,9 +7,9 @@ import asyncio
 import sys
 import traceback
 import time
-import threading # For background polling
-import json # For reading status files
-from datetime import datetime # For cleaning up old entries
+import threading
+import json
+from datetime import datetime
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -19,10 +19,11 @@ from utils import initialize_streamrip_db
 from apis.listenbrainz_api import ListenBrainzAPI
 from apis.navidrome_api import NavidromeAPI
 from apis.deezer_api import DeezerAPI
+from apis.llm_api import LlmAPI
 from downloaders.track_downloader import TrackDownloader
 from downloaders.link_downloader import LinkDownloader
 from utils import Tagger
-import uuid # For unique download IDs
+import uuid
 
 app = Flask(__name__)
 
@@ -45,7 +46,9 @@ navidrome_api_global = NavidromeAPI(
     lastfm_target_comment=LASTFM_TARGET_COMMENT,
     album_recommendation_comment=ALBUM_RECOMMENDATION_COMMENT,
     listenbrainz_enabled=LISTENBRAINZ_ENABLED,
-    lastfm_enabled=LASTFM_ENABLED
+    lastfm_enabled=LASTFM_ENABLED,
+    llm_target_comment=LLM_TARGET_COMMENT,
+    llm_enabled=LLM_ENABLED
 )
 deezer_api_global = DeezerAPI()
 link_downloader_global = LinkDownloader(tagger_global, navidrome_api_global, deezer_api_global)
@@ -128,12 +131,32 @@ def update_cron_schedule(new_schedule):
     return False
 
 # --- Helper to update download status (used by background tasks, or simulated) ---
-def update_download_status(download_id, status, message=None):
+def update_download_status(download_id, status, message=None, title=None, current_track_count=None, total_track_count=None):
     if download_id in downloads_queue:
-        downloads_queue[download_id]['status'] = status
-        downloads_queue[download_id]['message'] = message
+        item = downloads_queue[download_id]
+        item['status'] = status
+        if message is not None:
+            item['message'] = message
+        if title is not None:
+            item['title'] = title
+        if current_track_count is not None:
+            item['current_track_count'] = current_track_count
+        if total_track_count is not None:
+            item['total_track_count'] = total_track_count
     else:
         print(f"Download ID {download_id} not found in queue.")
+        # This can happen if app.py restarts and finds an old status file
+        print(f"Download ID {download_id} not in memory queue. Creating new entry from status file.")
+        downloads_queue[download_id] = {
+            'id': download_id,
+            'artist': 'Playlist Download', # Generic placeholder
+            'title': title or f'Download {download_id[:8]}...',
+            'status': status,
+            'start_time': datetime.now().isoformat(), # Not the real start time, but best we can do
+            'message': message,
+            'current_track_count': current_track_count,
+            'total_track_count': total_track_count
+        }
 
 DOWNLOAD_STATUS_DIR = "/tmp/recommand_download_status"
 DOWNLOAD_QUEUE_CLEANUP_INTERVAL_SECONDS = 300 # 5 minutes
@@ -154,26 +177,27 @@ def poll_download_statuses():
                             
                             status = status_data.get('status')
                             message = status_data.get('message')
+                            title = status_data.get('title')
+                            current_track_count = status_data.get('current_track_count')
+                            total_track_count = status_data.get('total_track_count')
                             timestamp = datetime.fromisoformat(status_data.get('timestamp'))
 
-                            # Update downloads_queue if ID exists or create a new entry if not
-                            # This handles cases where app.py might restart and re-reads status files
+                            # Check if an update to the in-memory queue is needed
+                            needs_update = False
                             if download_id not in downloads_queue:
-                                # Try to infer artist/title if a new entry is created
-                                # This is a best-effort approach, real info might be limited
-                                downloads_queue[download_id] = {
-                                    'id': download_id,
-                                    'artist': 'Unknown Artist', # Placeholder
-                                    'title': f'Download {download_id[:8]}...', # Placeholder
-                                    'status': status,
-                                    'start_time': timestamp.isoformat(),
-                                    'message': message
-                                }
-                                print(f"Added new download ID {download_id} to queue from status file.")
+                                needs_update = True
                             else:
-                                if downloads_queue[download_id]['status'] != status: # Only update if status changed
-                                    update_download_status(download_id, status, message)
-                                    print(f"Updated status for {download_id} to {status}.")
+                                current_item = downloads_queue[download_id]
+                                if current_item['status'] != status or \
+                                   (title and current_item.get('title') != title) or \
+                                   (message and current_item.get('message') != message) or \
+                                   (current_track_count is not None and current_item.get('current_track_count') != current_track_count) or \
+                                   (total_track_count is not None and current_item.get('total_track_count') != total_track_count):
+                                    needs_update = True
+
+                            if needs_update:
+                                print(f"Polling: Found update for {download_id}. New status: {status}, New title: {title}")
+                                update_download_status(download_id, status, message, title, current_track_count, total_track_count)
 
                             # Cleanup completed/failed entries and their files after an interval
                             if status in ['completed', 'failed']:
@@ -219,6 +243,24 @@ def poll_download_statuses():
 # --- Routes ---
 @app.route('/api/download_queue', methods=['GET'])
 def get_download_queue():
+    # Update the queue from status files to ensure latest data
+    if os.path.exists(DOWNLOAD_STATUS_DIR):
+        for filename in os.listdir(DOWNLOAD_STATUS_DIR):
+            if filename.endswith(".json"):
+                download_id = filename.split(".")[0]
+                filepath = os.path.join(DOWNLOAD_STATUS_DIR, filename)
+                try:
+                    with open(filepath, 'r') as f:
+                        status_data = json.load(f)
+                    status = status_data.get('status')
+                    message = status_data.get('message')
+                    title = status_data.get('title')
+                    current_track_count = status_data.get('current_track_count')
+                    total_track_count = status_data.get('total_track_count')
+                    update_download_status(download_id, status, message, title, current_track_count, total_track_count)
+                except Exception as e:
+                    print(f"Error processing status file {filepath} in /api/download_queue: {e}")
+
     # Filter out older completed/failed tasks to keep the queue clean
     # For now, let's keep everything, a cleanup mechanism can be added later
     queue_list = list(downloads_queue.values())
@@ -271,6 +313,10 @@ def get_config():
         "ALBUM_RECOMMENDATION_ENABLED": ALBUM_RECOMMENDATION_ENABLED,
         "HIDE_DOWNLOAD_FROM_LINK": HIDE_DOWNLOAD_FROM_LINK,
         "HIDE_FRESH_RELEASES": HIDE_FRESH_RELEASES,
+        "LLM_ENABLED": LLM_ENABLED,
+        "LLM_PROVIDER": LLM_PROVIDER,
+        "LLM_API_KEY": "••••••••" if LLM_API_KEY else "",
+        "LLM_MODEL_NAME": globals().get("LLM_MODEL_NAME", ""),
         "CRON_SCHEDULE": get_current_cron_schedule()
     })
 
@@ -319,7 +365,7 @@ def update_config():
             current_config_content = f.read()
 
         # Define sensitive fields that should not be overwritten if masked
-        sensitive_fields = {'ROOT_ND', 'PASSWORD_ND', 'TOKEN_LB', 'LASTFM_API_KEY', 'LASTFM_API_SECRET', 'LASTFM_SESSION_KEY', 'DEEZER_ARL'}
+        sensitive_fields = {'ROOT_ND', 'PASSWORD_ND', 'TOKEN_LB', 'LASTFM_API_KEY', 'LASTFM_API_SECRET', 'LASTFM_SESSION_KEY', 'DEEZER_ARL', 'LLM_API_KEY'}
 
         # Prepare a list to hold the updated lines
         updated_lines = current_config_content.splitlines()
@@ -337,10 +383,10 @@ def update_config():
                 continue
 
             # Determine the string representation for writing to config.py
-            if key in {'LISTENBRAINZ_ENABLED', 'LASTFM_ENABLED', 'ALBUM_RECOMMENDATION_ENABLED', 'HIDE_DOWNLOAD_FROM_LINK', 'HIDE_FRESH_RELEASES'}:
+            if key in {'LISTENBRAINZ_ENABLED', 'LASTFM_ENABLED', 'ALBUM_RECOMMENDATION_ENABLED', 'HIDE_DOWNLOAD_FROM_LINK', 'HIDE_FRESH_RELEASES', 'LLM_ENABLED'}:
                 # Ensure boolean values are written as True/False (Python literal)
-                new_value_str_for_file = str(value)
-            elif key == 'DOWNLOAD_METHOD':
+                new_value_str_for_file = str(value) 
+            elif key in ('DOWNLOAD_METHOD', 'LLM_PROVIDER'):
                 new_value_str_for_file = f'"{value}"'
             else:
                 # For other string values, ensure they are quoted
@@ -352,7 +398,7 @@ def update_config():
 
             # Update the corresponding line in config.py content
             pattern = re.compile(rf'^{key}\s*=\s*.*$', re.MULTILINE)
-            if pattern.search(current_config_content): # Only modify if the key exists
+            if pattern.search(current_config_content): # Only modify if the key exists 
                 current_config_content = pattern.sub(f'{key} = {new_value_str_for_file}', current_config_content)
 
         # Write updated config.py file for persistence
@@ -370,7 +416,9 @@ def update_config():
             lastfm_target_comment=globals().get('LASTFM_TARGET_COMMENT', ''),
             album_recommendation_comment=globals().get('ALBUM_RECOMMENDATION_COMMENT', ''),
             listenbrainz_enabled=globals().get('LISTENBRAINZ_ENABLED', False),
-            lastfm_enabled=globals().get('LASTFM_ENABLED', False)
+            lastfm_enabled=globals().get('LASTFM_ENABLED', False),
+            llm_target_comment=globals().get('LLM_TARGET_COMMENT', ''),
+            llm_enabled=globals().get('LLM_ENABLED', False)
         )
         link_downloader_global = LinkDownloader(tagger_global, navidrome_api_global, deezer_api_global)
 
@@ -440,7 +488,9 @@ def trigger_listenbrainz_download():
             'title': 'Multiple Tracks',
             'status': 'in_progress',
             'start_time': datetime.now().isoformat(),
-            'message': 'Download initiated.'
+            'message': 'Download initiated.',
+            'current_track_count': 0,
+            'total_track_count': None  # Will be updated when recommendations are fetched
         }
         
         # Execute re-command.py in a separate process for non-blocking download, bypassing playlist check
@@ -465,7 +515,7 @@ def get_lastfm_playlist():
 
     try:
         lastfm_api = LastFmAPI(LASTFM_API_KEY, LASTFM_API_SECRET, LASTFM_USERNAME, LASTFM_SESSION_KEY, LASTFM_ENABLED)
-        lf_recs = lastfm_api.get_lastfm_recommendations()
+        lf_recs = asyncio.run(lastfm_api.get_lastfm_recommendations())
         print(f"Last.fm recommendations found: {len(lf_recs)}")
         if lf_recs:
             return jsonify({"status": "success", "recommendations": lf_recs})
@@ -482,7 +532,7 @@ def trigger_lastfm_download():
     try:
         # Check if there are recommendations first
         lastfm_api = LastFmAPI(LASTFM_API_KEY, LASTFM_API_SECRET, LASTFM_USERNAME, LASTFM_SESSION_KEY, LASTFM_ENABLED)
-        recs = lastfm_api.get_lastfm_recommendations()
+        recs = asyncio.run(lastfm_api.get_lastfm_recommendations())
         if not recs:
             return jsonify({"status": "error", "message": "No Last.fm recommendations found. Please check your credentials and try again."}), 400
         
@@ -493,7 +543,9 @@ def trigger_lastfm_download():
             'title': 'Multiple Tracks',
             'status': 'in_progress',
             'start_time': datetime.now().isoformat(),
-            'message': 'Download initiated.'
+            'message': 'Download initiated.',
+            'current_track_count': 0,
+            'total_track_count': None  # Will be updated when recommendations are fetched
         }
         
         # Execute re-command.py in a separate process for non-blocking download
@@ -511,8 +563,13 @@ def trigger_lastfm_download():
 def trigger_navidrome_cleanup():
     print("Attempting to trigger Navidrome cleanup...")
     try:
+        # Initialize API instances for cleanup
+        listenbrainz_api = ListenBrainzAPI(ROOT_LB, TOKEN_LB, USER_LB, LISTENBRAINZ_ENABLED)
+        lastfm_api = LastFmAPI(LASTFM_API_KEY, LASTFM_API_SECRET, LASTFM_USERNAME, LASTFM_SESSION_KEY, LASTFM_ENABLED)
+
+        import asyncio
         # Use the global navidrome_api_global instance
-        navidrome_api_global.process_navidrome_library()
+        asyncio.run(navidrome_api_global.process_navidrome_library(listenbrainz_api=listenbrainz_api, lastfm_api=lastfm_api))
         return jsonify({"status": "success", "message": "Navidrome cleanup completed successfully."})
     except Exception as e:
         print(f"Error triggering Navidrome cleanup: {e}")
@@ -682,9 +739,104 @@ def submit_lastfm_feedback():
         traceback.print_exc()
         return jsonify({"status": "error", "message": f"Error submitting feedback: {e}"}), 500
 
+@app.route('/api/get_llm_playlist', methods=['GET'])
+async def get_llm_playlist():
+    if not LLM_ENABLED:
+        return jsonify({"status": "error", "message": "LLM suggestions are not enabled in the configuration."}), 400
+    if not LLM_API_KEY:
+        return jsonify({"status": "error", "message": "LLM API key is not configured."}), 400
+
+    try:
+        listenbrainz_api = ListenBrainzAPI(ROOT_LB, TOKEN_LB, USER_LB, LISTENBRAINZ_ENABLED)
+        scrobbles = await listenbrainz_api.get_weekly_scrobbles()
+
+        if not scrobbles:
+            return jsonify({"status": "info", "message": "Could not fetch recent scrobbles from ListenBrainz to generate recommendations."})
+
+        llm_api = LlmAPI(
+            provider=LLM_PROVIDER,
+            gemini_api_key=LLM_API_KEY if LLM_PROVIDER == 'gemini' else None,
+            openrouter_api_key=LLM_API_KEY if LLM_PROVIDER == 'openrouter' else None,
+            model_name=globals().get('LLM_MODEL_NAME')
+        )
+        recommendations = llm_api.get_recommendations(scrobbles)
+
+        if recommendations:
+            # Fetch recording_mbid and release_mbid for each recommendation to enable feedback and album art
+            processed_recommendations = []
+            for rec in recommendations:
+                # Respect MusicBrainz rate limit (1 req/sec)
+                await asyncio.sleep(1)
+                mbid = await listenbrainz_api.get_recording_mbid_from_track(rec['artist'], rec['title'])
+                
+                rec['recording_mbid'] = mbid
+                rec['caa_release_mbid'] = None
+                rec['caa_id'] = None # Not available through this flow, but good to have for consistency
+
+                if mbid:
+                    await asyncio.sleep(1) # Another request, another sleep
+                    # get_track_info returns: artist, title, album, release_date, release_mbid
+                    _, _, fetched_album, _, release_mbid = await listenbrainz_api.get_track_info(mbid)
+                    if release_mbid:
+                        rec['caa_release_mbid'] = release_mbid
+                    # Use the more accurate album title from MusicBrainz
+                    if fetched_album and fetched_album != "Unknown Album":
+                        rec['album'] = fetched_album
+                
+                processed_recommendations.append(rec)
+
+            return jsonify({"status": "success", "recommendations": processed_recommendations})
+        else:
+            return jsonify({"status": "error", "message": "LLM failed to generate recommendations."})
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": f"An error occurred: {e}"}), 500
+
+@app.route('/api/trigger_llm_download', methods=['POST'])
+def trigger_llm_download():
+    # This endpoint will fetch recommendations and then trigger downloads.
+    # For simplicity, we'll re-fetch. A better implementation might cache the result from get_llm_playlist.
+    if not LLM_ENABLED or not LLM_API_KEY:
+        return jsonify({"status": "error", "message": "LLM suggestions are not enabled or configured."}), 400
+
+    listenbrainz_api = ListenBrainzAPI(ROOT_LB, TOKEN_LB, USER_LB, LISTENBRAINZ_ENABLED)
+    scrobbles = asyncio.run(listenbrainz_api.get_weekly_scrobbles())
+    if not scrobbles:
+        return jsonify({"status": "info", "message": "No scrobbles to generate recommendations from."})
+
+    llm_api = LlmAPI(
+        provider=LLM_PROVIDER,
+        gemini_api_key=LLM_API_KEY if LLM_PROVIDER == 'gemini' else None,
+        openrouter_api_key=LLM_API_KEY if LLM_PROVIDER == 'openrouter' else None,
+        model_name=globals().get('LLM_MODEL_NAME')
+    )
+    recommendations = llm_api.get_recommendations(scrobbles)
+
+    if not recommendations:
+        return jsonify({"status": "error", "message": "LLM failed to generate recommendations for download."})
+
+    download_id = str(uuid.uuid4())
+    downloads_queue[download_id] = {
+        'id': download_id,
+        'artist': 'LLM Playlist',
+        'title': f'{len(recommendations)} Tracks',
+        'status': 'in_progress',
+        'start_time': datetime.now().isoformat(),
+        'message': 'Download initiated.',
+        'current_track_count': 0,
+        'total_track_count': len(recommendations)
+    }
+
+    # Execute downloads in a background thread
+    threading.Thread(target=lambda: asyncio.run(download_llm_recommendations_background(recommendations, download_id))).start()
+
+    return jsonify({"status": "info", "message": f"Started download of {len(recommendations)} tracks from LLM recommendations in the background."})
+
 @app.route('/api/trigger_fresh_release_download', methods=['POST'])
 def trigger_fresh_release_download():
     print("Attempting to trigger fresh release album download...")
+    artist = None
     try:
         data = request.get_json()
         artist = data.get('artist')
@@ -795,6 +947,8 @@ def trigger_track_download():
         data = request.get_json()
         artist = data.get('artist')
         title = data.get('title')
+        lb_recommendation = data.get('lb_recommendation', False)  # Get the lb_recommendation flag
+        source = data.get('source', 'Manual') # Get the source
 
         if not artist or not title:
             return jsonify({"status": "error", "message": "Artist and title are required"}), 400
@@ -817,28 +971,27 @@ def trigger_track_download():
             'artist': artist,
             'title': title,
             'album': '',
-            'release_date': '',
+            'release_date': '', # Will be fetched later
             'recording_mbid': '',
-            'source': 'Manual',
+            'source': source,
             'download_id': download_id # Pass download_id to the downloader
         }
 
-        result = asyncio.run(track_downloader.download_track(track_info))
-        # Update the global queue with the final status after download completes
-        if result["status"] == "success":
-            update_download_status(download_id, 'completed', f"Downloaded track {artist} - {title}.")
-        else:
-            update_download_status(download_id, 'failed', result.get('message', 'Download failed.'))
-
-        if result["status"] == "success":
-            # Organize the downloaded file -> music library
+        downloaded_path = asyncio.run(track_downloader.download_track(track_info, lb_recommendation=lb_recommendation))
+        
+        if downloaded_path:
+            update_download_status(download_id, 'completed', "Download completed.")
+            # Organize the downloaded files -> music library
             navidrome_api_global.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_LIBRARY_PATH)
-            return jsonify({"status": "success", "message": f"Successfully downloaded and organized track {artist} - {title}."})
+            return jsonify({"status": "success", "message": f"Successfully downloaded and organized track: {artist} - {title}."})
         else:
-            return jsonify({"status": "error", "message": result["message"]})
+            update_download_status(download_id, 'failed', "Download failed. See logs for details.")
+            return jsonify({"status": "error", "message": f"Failed to download track: {artist} - {title}."})
 
     except Exception as e:
         print(f"Error triggering track download: {e}")
+        if 'download_id' in locals():
+            update_download_status(download_id, 'failed', f"An error occurred: {e}")
         return jsonify({"status": "error", "message": f"Error triggering download: {e}"}), 500
 
 @app.route('/api/download_from_link', methods=['POST'])
@@ -848,6 +1001,11 @@ async def download_from_link():
         data = request.get_json()
         link = data.get('link')
         lb_recommendation = data.get('lb_recommendation', False) # Get the checkbox value, default to False
+
+        # Auto-detect ListenBrainz playlist URLs and set lb_recommendation=True
+        if 'listenbrainz.org/playlist' in link.lower():
+            lb_recommendation = True
+            print(f"Detected ListenBrainz playlist URL, automatically setting lb_recommendation=True")
 
         if not link:
             return jsonify({"status": "error", "message": "Link is required"}), 400
@@ -901,10 +1059,52 @@ def handle_exception(e):
     print(f"Unhandled exception: {e}", file=sys.stderr)
     return jsonify({"status": "error", "message": "An unexpected error occurred.", "details": str(e)}), 500
 
+async def download_llm_recommendations_background(recommendations, download_id):
+    """Helper function to download tracks from LLM recommendations in the background."""
+    tagger = Tagger(album_recommendation_comment=ALBUM_RECOMMENDATION_COMMENT)
+    track_downloader = TrackDownloader(tagger)
+    
+    total_tracks = len(recommendations)
+    downloaded_count = 0
+    for i, song in enumerate(recommendations):
+        update_download_status(
+            download_id, 
+            'in_progress', 
+            f"Downloading track {i+1}/{total_tracks}: {song['artist']} - {song['title']}",
+            current_track_count=downloaded_count,
+            total_track_count=total_tracks
+        )
+        
+        song['source'] = 'LLM'
+        song['recording_mbid'] = '' # Not available from LLM
+        song['release_date'] = '' # Not available from LLM
+        
+        downloaded_path = await track_downloader.download_track(song)
+        
+        if downloaded_path:
+            downloaded_count += 1
+            update_download_status(
+                download_id,
+                'in_progress',
+                f"Downloaded track {i+1}/{total_tracks}",
+                current_track_count=downloaded_count
+            )
+        else:
+            print(f"Failed to download LLM recommendation: {song['artist']} - {song['title']}")
+
+    # Organize files after all downloads are attempted
+    navidrome_api_global.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_LIBRARY_PATH)
+
+    # Set final status
+    update_download_status(
+        download_id, 
+        'completed', 
+        f"Download complete. Processed {downloaded_count}/{total_tracks} tracks.",
+        current_track_count=downloaded_count
+    )
+
 if __name__ == '__main__':
-    # Start the background thread for polling download statuses
     download_poller_thread = threading.Thread(target=poll_download_statuses, daemon=True)
     download_poller_thread.start()
-    print("Download status poller thread started.")
 
     app.run(host='0.0.0.0', port=5000, debug=True)

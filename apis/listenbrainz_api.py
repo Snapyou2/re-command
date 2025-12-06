@@ -1,5 +1,5 @@
 import requests
-import time # Import time for caching
+import time
 import os
 import asyncio
 import concurrent.futures
@@ -129,6 +129,27 @@ class ListenBrainzAPI:
             headers=self.auth_header_lb,
         )
         return response.json()
+
+    async def get_recording_mbid_from_track(self, artist, title):
+        """Fetches recording MBID from MusicBrainz using artist and title."""
+        headers = {
+            'User-Agent': 'Re-command/1.0 ( https://github.com/z-a-f/re-command )'
+        }
+        url = f"https://musicbrainz.org/ws/2/recording/?query=artist:\"{artist}\" AND recording:\"{title}\"&fmt=json"
+        try:
+            response = await self._make_request_with_retries(
+                method="GET",
+                url=url,
+                headers=headers,
+                retry_delay=2
+            )
+            data = response.json()
+            if data.get("recordings") and len(data["recordings"]) > 0:
+                # Recordings are sorted by score descending, so the first is likely the best match.
+                return data["recordings"][0].get("id")
+        except Exception as e:
+            print(f"Error getting MBID for {artist} - {title}: {e}", file=sys.stderr)
+        return None
 
     async def get_track_info(self, recording_mbid):
         """Fetches track information from MusicBrainz asynchronously."""
@@ -310,6 +331,31 @@ class ListenBrainzAPI:
         print(f"Cached fresh releases at {time.ctime(self._fresh_releases_cache_timestamp)}")
         
         return result
+
+    async def get_weekly_scrobbles(self, count=200):
+        """Fetches the user's scrobbles from the last 7 days."""
+        if not self._listenbrainz_enabled:
+            return []
+
+        now = int(time.time())
+        one_week_ago = now - (7 * 24 * 60 * 60)
+
+        params = {
+            "min_ts": one_week_ago,
+            "max_ts": now,
+            "count": count
+        }
+        url = f"{self.root_lb}/1/user/{self.user_lb}/listens"
+        
+        try:
+            response = await self._make_request_with_retries("GET", url, headers=self.auth_header_lb, params=params)
+            data = response.json()
+            listens = data.get('payload', {}).get('listens', [])
+            scrobbles = [{'artist': listen['track_metadata']['artist_name'], 'track': listen['track_metadata']['track_name']} for listen in listens]
+            return scrobbles
+        except Exception as e:
+            print(f"Error fetching weekly scrobbles from ListenBrainz: {e}", file=sys.stderr)
+            return []
 
 
 

@@ -3,6 +3,7 @@ import hashlib
 import os
 import sys
 import shutil
+import asyncio
 from tqdm import tqdm
 from config import TEMP_DOWNLOAD_FOLDER 
 from mutagen import File, MutagenError
@@ -13,7 +14,7 @@ from mutagen.oggvorbis import OggVorbis
 from mutagen.m4a import M4A
 
 class NavidromeAPI:
-    def __init__(self, root_nd, user_nd, password_nd, music_library_path, target_comment, lastfm_target_comment, album_recommendation_comment=None, listenbrainz_enabled=False, lastfm_enabled=False):
+    def __init__(self, root_nd, user_nd, password_nd, music_library_path, target_comment, lastfm_target_comment, album_recommendation_comment=None, llm_target_comment=None, listenbrainz_enabled=False, lastfm_enabled=False, llm_enabled=False):
         self.root_nd = root_nd
         self.user_nd = user_nd
         self.password_nd = password_nd
@@ -21,8 +22,10 @@ class NavidromeAPI:
         self.target_comment = target_comment
         self.lastfm_target_comment = lastfm_target_comment
         self.album_recommendation_comment = album_recommendation_comment
+        self.llm_target_comment = llm_target_comment
         self.listenbrainz_enabled = listenbrainz_enabled
         self.lastfm_enabled = lastfm_enabled
+        self.llm_enabled = llm_enabled
 
     def _get_navidrome_auth_params(self):
         """Generates authentication parameters for Navidrome."""
@@ -260,12 +263,12 @@ class NavidromeAPI:
 
         return None
 
-    def process_navidrome_library(self, listenbrainz_api=None):
+    async def process_navidrome_library(self, listenbrainz_api=None, lastfm_api=None):
         """Processes the Navidrome library with a progress bar."""
         salt, token = self._get_navidrome_auth_params()
         all_songs = self._get_all_songs(salt, token)
         print(f"Parsing {len(all_songs)} songs from Navidrome to cleanup badly rated songs.")
-        print(f"Looking for comments: '{self.target_comment}' (ListenBrainz), '{self.lastfm_target_comment}' (Last.fm), and '{self.album_recommendation_comment}' (Album Recommendation)")
+        print(f"Looking for comments: '{self.target_comment}' (ListenBrainz), '{self.lastfm_target_comment}' (Last.fm), '{self.album_recommendation_comment}' (Album Recommendation), and '{self.llm_target_comment}' (LLM)")
 
         deleted_songs = []
         found_comments = []
@@ -354,7 +357,8 @@ class NavidromeAPI:
             song_comment = actual_comment if actual_comment else api_comment
             has_recommendation_comment = (song_comment == self.target_comment or
                                         song_comment == self.lastfm_target_comment or
-                                        song_comment == self.album_recommendation_comment)
+                                        song_comment == self.album_recommendation_comment or
+                                        song_comment == self.llm_target_comment)
             
 
             
@@ -363,9 +367,15 @@ class NavidromeAPI:
                 
                 # ListenBrainz recommendations
                 if song_comment == self.target_comment and self.listenbrainz_enabled:
-                    if user_rating >= 4:
+                    if user_rating == 5:
                         self._update_song_comment(song_path, "")
-                    elif user_rating <= 3:
+                        # Submit positive feedback (love) for 5-star tracks
+                        if 'musicBrainzId' in song_details and song_details['musicBrainzId'] and listenbrainz_api:
+                            await listenbrainz_api.submit_feedback(song_details['musicBrainzId'], 1)
+                    elif user_rating == 4:
+                        # Keep 4-star tracks but remove comment (no feedback)
+                        self._update_song_comment(song_path, "")
+                    elif user_rating == 1:
                         if os.path.isdir(song_path):
                             all_files_deleted_in_dir = True
                             for root, _, files in os.walk(song_path):
@@ -378,12 +388,36 @@ class NavidromeAPI:
                         else:
                             if self._delete_song(song_path):
                                 deleted_songs.append(f"{song_details['artist']} - {song_details['title']}")
-                        if 'musicBrainzId' in song_details and song_details['musicBrainzId'] and user_rating == 1 and listenbrainz_api:
-                            listenbrainz_api.submit_feedback(song_details['musicBrainzId'], 1)
+                        # Submit negative feedback (hate) for 1-star tracks
+                        if 'musicBrainzId' in song_details and song_details['musicBrainzId'] and listenbrainz_api:
+                            await listenbrainz_api.submit_feedback(song_details['musicBrainzId'], -1)
+                    elif user_rating <= 3:
+                        # Delete tracks rated 2-3 stars but don't submit feedback
+                        if os.path.isdir(song_path):
+                            all_files_deleted_in_dir = True
+                            for root, _, files in os.walk(song_path):
+                                for file in files:
+                                    file_to_delete = os.path.join(root, file)
+                                    if not self._delete_song(file_to_delete):
+                                        all_files_deleted_in_dir = False
+                            if all_files_deleted_in_dir:
+                                deleted_songs.append(f"{song_details['artist']} - {song_details['title']}")
+                        else:
+                            if self._delete_song(song_path):
+                                deleted_songs.append(f"{song_details['artist']} - {song_details['title']}")
 
                 # Last.fm recommendations
                 elif song_comment == self.lastfm_target_comment and self.lastfm_enabled:
-                    if user_rating >= 4:
+                    if user_rating == 5:
+                        self._update_song_comment(song_path, "")
+                        # Submit positive feedback (love) for 5-star tracks
+                        if lastfm_api:
+                            try:
+                                await asyncio.to_thread(lastfm_api.love_track, song_details['title'], song_details['artist'])
+                            except Exception as e:
+                                print(f"Error submitting Last.fm love feedback for {song_details['artist']} - {song_details['title']}: {e}")
+                    elif user_rating == 4:
+                        # Keep 4-star tracks but remove comment (no feedback)
                         self._update_song_comment(song_path, "")
                     elif user_rating <= 3:
                         if os.path.isdir(song_path):
@@ -401,9 +435,28 @@ class NavidromeAPI:
 
                 # Album recommendations
                 elif song_comment == self.album_recommendation_comment:
-                    if user_rating >= 4:
+                    if user_rating == 5 or user_rating == 4:
+                        # Keep 4-5 star tracks but remove comment (no feedback for albums)
                         self._update_song_comment(song_path, "")
                     elif user_rating <= 3:
+                        if os.path.isdir(song_path):
+                            all_files_deleted_in_dir = True
+                            for root, _, files in os.walk(song_path):
+                                for file in files:
+                                    file_to_delete = os.path.join(root, file)
+                                    if not self._delete_song(file_to_delete):
+                                        all_files_deleted_in_dir = False
+                            if all_files_deleted_in_dir:
+                                deleted_songs.append(f"{song_details['artist']} - {song_details['title']}")
+                        else:
+                            if self._delete_song(song_path):
+                                deleted_songs.append(f"{song_details['artist']} - {song_details['title']}")
+
+                # LLM recommendations
+                elif song_comment == self.llm_target_comment and self.llm_enabled:
+                    if user_rating >= 4: # Keep 4-5 star tracks
+                        self._update_song_comment(song_path, "")
+                    elif user_rating <= 3: # Delete tracks rated 3 stars or below
                         if os.path.isdir(song_path):
                             all_files_deleted_in_dir = True
                             for root, _, files in os.walk(song_path):

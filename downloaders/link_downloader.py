@@ -30,6 +30,16 @@ class LinkDownloader:
     async def download_from_url(self, url: str, lb_recommendation: bool = False, download_id: Optional[str] = None):
         print(f"Attempting to download from URL: {url}")
 
+        # Debug logging
+        debug_info = {
+            'url': url,
+            'lb_recommendation': lb_recommendation,
+            'download_id': download_id,
+            'timestamp': __import__('datetime').datetime.now().isoformat()
+        }
+        with open('/app/debug.log', 'a') as f:
+            f.write(f"LINK_DOWNLOADER_START: {debug_info}\n")
+
         # Regex for supported platforms
         spotify_track_re = r"open\.spotify\.com\/track\/([a-zA-Z0-9]+)"
         spotify_album_re = r"open\.spotify\.com\/album\/([a-zA-Z0-9]+)"
@@ -299,7 +309,16 @@ class LinkDownloader:
                     downloaded_files.extend(self._find_downloaded_files_for_album(artist, album_title))
                 elif media_type == "playlist":
                     playlist_name = getattr(media, 'name', '')
-                    downloaded_files.extend(self._find_downloaded_files_for_playlist(playlist_name))
+                    playlist_files = self._find_downloaded_files_for_playlist(playlist_name)
+                    downloaded_files.extend(playlist_files)
+
+                    # If this is a ListenBrainz recommendation, retag the files with the correct comment
+                    if lb_recommendation:
+                        print(f"Post-processing playlist files for ListenBrainz recommendation tagging...")
+                        for file_path in playlist_files:
+                            if file_path and os.path.exists(file_path):
+                                print(f"Retagging {file_path} with lb_recommendation comment")
+                                self.tagger.add_comment_to_file(file_path, self.tagger.target_comment)
             else:
                 # If streamrip's resolution failed for a track, use the TrackDownloader fallback.
                 if media_type == "track":
@@ -343,7 +362,7 @@ class LinkDownloader:
                             print(f"DEBUG: Could not get artist/title from Songlink for {original_platform} ID {original_id} for TrackDownloader fallback.", file=sys.stderr)
 
                     if full_song_info.get('artist') and full_song_info.get('title'):
-                        downloaded_track_path = await self.track_downloader.download_track(full_song_info)
+                        downloaded_track_path = await self.track_downloader.download_track(full_song_info, lb_recommendation=lb_recommendation)
                         if downloaded_track_path:
                             print(f"DEBUG: TrackDownloader fallback successful. Downloaded: {downloaded_track_path}", file=sys.stderr)
                             downloaded_files.append(downloaded_track_path)
@@ -392,13 +411,13 @@ class LinkDownloader:
                                     'source': 'Deezer',
                                     'album_art': album_art
                                 }
-                                downloaded_track_path = await self.track_downloader.download_track(full_song_info)
+                                downloaded_track_path = await self.track_downloader.download_track(full_song_info, lb_recommendation=lb_recommendation)
                                 if downloaded_track_path:
                                     print(f"DEBUG: TrackDownloader fallback successful for track '{track_title}'. Downloaded: {downloaded_track_path}", file=sys.stderr)
                                     downloaded_files.append(downloaded_track_path)
                                 else:
                                     print(f"DEBUG: TrackDownloader fallback failed for track '{track_title}'.", file=sys.stderr)
-                            
+
                             if downloaded_files:
                                 media = True
                             else:

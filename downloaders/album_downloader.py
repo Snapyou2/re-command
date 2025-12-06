@@ -150,13 +150,8 @@ class AlbumDownloader:
 
     async def _get_deezer_album_link(self, album_info):
         """Fetches Deezer album link."""
-        print(f"Deezer API: Searching for album '{album_info['album']}' by '{album_info['artist']}'")
         deezer_api = DeezerAPI()
         link, deezer_album_data = await deezer_api.get_deezer_album_link(album_info['artist'], album_info['album'])
-        if link:
-            print(f"Deezer API: Found album link: {link}")
-        else:
-            print("Deezer API: No album link found.")
         return link, deezer_album_data
 
     def _sanitize_for_matching(self, s):

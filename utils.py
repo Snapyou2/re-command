@@ -1,3 +1,5 @@
+from datetime import datetime
+import json
 import os
 import re
 import requests
@@ -71,13 +73,56 @@ class Tagger:
 
     def add_comment_to_file(self, file_path, comment):
         """Add a comment to a specific audio file."""
-        try:
-            audio = ID3(file_path)
-        except error.ID3NoHeaderError:
-            audio = ID3()
+        # Debug logging
+        debug_info = {
+            'file_path': file_path,
+            'comment': comment,
+            'timestamp': __import__('datetime').datetime.now().isoformat()
+        }
+        with open('/app/debug.log', 'a') as f:
+            f.write(f"ADD_COMMENT_START: {debug_info}\n")
 
-        audio.add(COMM(encoding=3, lang='eng', desc='', text=comment))
-        audio.save(file_path, v2_version=3, v1=2)
+        try:
+            if file_path.lower().endswith('.mp3'):
+                # For MP3s, use ID3 tags
+                try:
+                    audio = ID3(file_path)
+                except error.ID3NoHeaderError:
+                    audio = ID3()
+
+                audio.add(COMM(encoding=3, lang='eng', desc='', text=comment))
+                audio.save(file_path, v2_version=3, v1=2)
+                print(f"Added ID3 comment to MP3 file: {file_path}")
+
+            elif file_path.lower().endswith('.flac'):
+                # For FLAC, use Vorbis comments
+                audio = FLAC(file_path)
+                audio['comment'] = comment
+                audio.save()
+                print(f"Added Vorbis comment to FLAC file: {file_path}")
+
+            elif file_path.lower().endswith(('.ogg', '.oga')):
+                # For OggVorbis, use Vorbis comments
+                audio = OggVorbis(file_path)
+                audio['comment'] = comment
+                audio.save()
+                print(f"Added Vorbis comment to OggVorbis file: {file_path}")
+
+            elif file_path.lower().endswith('.m4a'):
+                # For M4A, use iTunes-style atoms
+                audio = M4A(file_path)
+                audio['\xa9cmt'] = [comment]
+                audio.save()
+                print(f"Added iTunes comment to M4A file: {file_path}")
+
+            else:
+                print(f"Unsupported file type for adding comment: {file_path}")
+                return
+
+        except Exception as e:
+            print(f"Error adding comment to {file_path}: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _embed_album_art(self, file_path, album_art_url):
         """Downloads and embeds album art into the audio file."""
@@ -267,7 +312,7 @@ class Tagger:
             print(f"Error fetching album art: {e}")
             return None
 
-def update_status_file(download_id, status, message=None):
+def update_status_file(download_id, status, message=None, title=None, current_track_count=None, total_track_count=None):
     if not download_id:
         return
 
@@ -281,6 +326,20 @@ def update_status_file(download_id, status, message=None):
     }
     if message:
         status_data["message"] = message
+    if title:
+        status_data["title"] = title
+    else:
+        # Default title based on status
+        if status == "completed":
+            status_data["title"] = "Download completed"
+        elif status == "failed":
+            status_data["title"] = "Download failed"
+        elif status == "in_progress":
+            status_data["title"] = "Download in progress"
+    if current_track_count is not None:
+        status_data["current_track_count"] = current_track_count
+    if total_track_count is not None:
+        status_data["total_track_count"] = total_track_count
 
     with open(status_file_path, 'w') as f:
         json.dump(status_data, f)
