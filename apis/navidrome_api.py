@@ -5,13 +5,14 @@ import sys
 import shutil
 import asyncio
 from tqdm import tqdm
-from config import TEMP_DOWNLOAD_FOLDER 
+from config import TEMP_DOWNLOAD_FOLDER
 from mutagen import File, MutagenError
 from mutagen.id3 import ID3, COMM, ID3NoHeaderError, error as ID3Error
 from mutagen.mp3 import MP3
 from mutagen.flac import FLAC
 from mutagen.oggvorbis import OggVorbis
 from mutagen.m4a import M4A
+from utils import sanitize_filename
 
 class NavidromeAPI:
     def __init__(self, root_nd, user_nd, password_nd, music_library_path, target_comment, lastfm_target_comment, album_recommendation_comment=None, llm_target_comment=None, listenbrainz_enabled=False, lastfm_enabled=False, llm_enabled=False):
@@ -141,9 +142,9 @@ class NavidromeAPI:
 
         # Second strat : reconstructing song details from metadata
         if song_details:
-            artist = song_details.get('artist', '')
-            album = song_details.get('album', '')
-            title = song_details.get('title', '')
+            artist = sanitize_filename(song_details.get('artist', ''))
+            album = sanitize_filename(song_details.get('album', ''))
+            title = sanitize_filename(song_details.get('title', ''))
 
             if artist and album and title:
                 reconstructed_path = os.path.join(artist, album, f"{title}.mp3")
@@ -491,7 +492,12 @@ class NavidromeAPI:
                 print(f"- {song}")
         else:
             print("No songs with recommendation comment were found.")
-            
+
+        # Remove empty folders after cleanup
+        print("Removing empty folders from music library...")
+        from utils import remove_empty_folders
+        remove_empty_folders(self.music_library_path)
+        print("Empty folder removal completed.")
 
 
     def organize_music_files(self, source_folder, destination_base_folder):
