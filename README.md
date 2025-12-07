@@ -3,7 +3,6 @@
 <p align="center">
   <img src="web_ui/assets/logo.svg" width="200" alt="Re-command Logo">
 </p>
-
 `re-command` is a modern, containerized music recommendation and automation system that enhances your Navidrome music experience. It automatically discovers and downloads music recommendations from [ListenBrainz](https://listenbrainz.org) and [Last.fm](https://www.last.fm) using [Streamrip](https://github.com/nathom/streamrip) or [Deemix](https://deemix.org/), then organizes and tags them in your music library.
 
 ## Key Features
@@ -17,7 +16,53 @@
 *   **Automated Library Maintenance:** Removes tracks from previous recommendations and submit scrobbling feedbacks based on your Navidrome ratings
 *   **Containerized Deployment:** Full Docker support with automated setup and configuration
 
-## Quick Start with Docker
+## Table of Contents
+
+- [Quick Start with Docker Compose](#quick-start-with-docker-compose)
+- [Alternative: Quick Start with Docker (Script)](#alternative-quick-start-with-docker-script)
+- [Screenshots](#screenshots)
+- [Usage Modes](#usage-modes)
+- [Local Development Setup (non-dockerized)](#local-development-setup-non-dockerized)
+- [Manual Configuration](#manual-configuration)
+- [LLM Model Comparison](#llm-model-comparison)
+- [Advanced Configuration](#advanced-configuration)
+- [Troubleshooting](#troubleshooting)
+- [Contributing / Roadmap](#contributing--roadmap)
+
+## Quick Start with Docker Compose
+
+### Prerequisites
+
+- [Docker](https://www.docker.com/get-started) and [Docker Compose](https://docs.docker.com/compose/) installed
+- A running [Navidrome](https://www.navidrome.org/) instance
+- [Deezer](https://www.deezer.com/) account with ARL token
+- A [ListenBrainz](https://listenbrainz.org/) and/or [Last.fm](https://www.last.fm/) account (recommended)
+
+### 1. Clone and Setup
+
+```bash
+git clone https://github.com/Snapyou2/re-command.git
+cd re-command/docker
+cp .env .env.local
+```
+
+Edit `.env.local` and set at least `MUSIC_PATH` to your Navidrome music library path.
+
+### 2. Start the Application
+
+```bash
+docker compose up -d
+```
+
+### 3. Access the Web Interface
+
+Open `http://localhost:5000` in your browser. Configure Navidrome access, playlist providers, and Deezer ARL in the settings.
+
+### 4. Create a Dynamic Playlist
+
+In Navidrome, create a playlist with filters: *Comment contains lb_recommendation* OR *Comment contains lastfm_recommendation* OR *Comment contains llm_recommendation*. Optionally add *Rating > 1*.
+
+## Alternative: Quick Start with Docker (Script)
 
 ### Prerequisites
 
@@ -177,7 +222,7 @@ python web_ui/app.py
 
 Then open `http://localhost:5000` in your browser.
 
-## Configuration
+## Manual Configuration
 
 ### Environment Variables (Docker)
 

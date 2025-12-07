@@ -24,11 +24,10 @@ LASTFM_PASSWORD_HASH = ""
 LASTFM_SESSION_KEY = ""
 
 # LLM Suggestions Settings
-LLM_ENABLED = True
-LLM_PROVIDER = 'gemini'
-LLM_API_KEY = ''
-LLM_MODEL_NAME = ''
-LLM_TARGET_COMMENT = 'llm_recommendation'
+LLM_ENABLED = False
+LLM_PROVIDER = ""
+LLM_API_KEY = ""
+LLM_MODEL_NAME = ""
 
 # Deezer Configuration
 DEEZER_ARL = ""
@@ -47,6 +46,7 @@ HIDE_FRESH_RELEASES = os.getenv('HIDE_FRESH_RELEASES', 'false').lower() == 'true
 TARGET_COMMENT = "lb_recommendation"
 LASTFM_TARGET_COMMENT = "lastfm_recommendation"
 ALBUM_RECOMMENDATION_COMMENT = "album_recommendation"
+LLM_TARGET_COMMENT = 'llm_recommendation'
 
 # History Tracking
 PLAYLIST_HISTORY_FILE = "playlist_history.txt"
