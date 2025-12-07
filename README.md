@@ -3,6 +3,7 @@
 <p align="center">
   <img src="web_ui/assets/logo.svg" width="200" alt="Re-command Logo">
 </p>
+
 `re-command` is a modern, containerized music recommendation and automation system that enhances your Navidrome music experience. It automatically discovers and downloads music recommendations from [ListenBrainz](https://listenbrainz.org) and [Last.fm](https://www.last.fm) using [Streamrip](https://github.com/nathom/streamrip) or [Deemix](https://deemix.org/), then organizes and tags them in your music library.
 
 ## Key Features

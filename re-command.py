@@ -9,7 +9,7 @@ from tqdm import tqdm
 from config import *
 from apis.deezer_api import DeezerAPI
 from apis.lastfm_api import LastFmAPI
-from utils import initialize_streamrip_db, update_status_file # Import the new initialization function and update_status_file
+from utils import initialize_streamrip_db, update_status_file
 from apis.listenbrainz_api import ListenBrainzAPI
 from apis.navidrome_api import NavidromeAPI
 from apis.llm_api import LlmAPI
