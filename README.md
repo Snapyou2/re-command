@@ -43,10 +43,9 @@
 ```bash
 git clone https://github.com/Snapyou2/re-command.git
 cd re-command/docker
-cp .env .env.local
 ```
 
-Edit `.env.local` and set at least `MUSIC_PATH` to your Navidrome music library path.
+Edit `.env` and set at least `MUSIC_PATH` to your Navidrome music library path.
 
 ### 2. Start the Application
 
