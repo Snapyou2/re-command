@@ -610,7 +610,8 @@ class NavidromeAPI:
                                 os.remove(file_path)
                                 print(f"Duplicate found. Deleted original file: {file_path}")
                                 continue
-
+                        
+                        os.makedirs(album_folder, exist_ok=True)
                         shutil.move(file_path, new_file_path)
                         print(f"Moved '{filename}' to '{os.path.relpath(new_file_path, destination_base_folder)}'")
                     except Exception as e:
