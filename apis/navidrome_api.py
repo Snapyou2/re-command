@@ -5,7 +5,7 @@ import sys
 import shutil
 import asyncio
 from tqdm import tqdm
-from config import TEMP_DOWNLOAD_FOLDER
+from config import TEMP_DOWNLOAD_FOLDER, KEEP_DUPLICATE_FILES
 from mutagen import File, MutagenError
 from mutagen.id3 import ID3, COMM, ID3NoHeaderError, error as ID3Error
 from mutagen.mp3 import MP3
@@ -599,13 +599,18 @@ class NavidromeAPI:
                         new_filename = f"{title}{file_ext}"
                         new_file_path = os.path.join(album_folder, new_filename)
 
-                        counter = 1
-                        while os.path.exists(new_file_path):
-                            new_filename = f"{title} ({counter}){file_ext}"
-                            new_file_path = os.path.join(album_folder, new_filename)
-                            counter += 1
+                        if os.path.exists(new_file_path):
+                            if KEEP_DUPLICATE_FILES:
+                                counter = 1
+                                while os.path.exists(new_file_path):
+                                    new_filename = f"{title} ({counter}){file_ext}"
+                                    new_file_path = os.path.join(album_folder, new_filename)
+                                    counter += 1
+                            else:
+                                os.remove(file_path)
+                                print(f"Duplicate found. Deleted original file: {file_path}")
+                                continue
 
-                        os.makedirs(album_folder, exist_ok=True)
                         shutil.move(file_path, new_file_path)
                         print(f"Moved '{filename}' to '{os.path.relpath(new_file_path, destination_base_folder)}'")
                     except Exception as e:
