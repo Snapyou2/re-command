@@ -245,8 +245,6 @@ class DeezerAPI:
         Returns:
             The Deezer album link if found, otherwise None.
         """
-        print(f"DeezerAPI: Entering get_deezer_album_link for artist='{artist}', album='{album_title}'", file=sys.stderr)
-        self._log_to_file(f"DeezerAPI: Entering get_deezer_album_link for artist='{artist}', album='{album_title}'")
 
         # Normalize and clean artist/album names for more flexible matching
         original_artist_lower = self._normalize_string(artist)

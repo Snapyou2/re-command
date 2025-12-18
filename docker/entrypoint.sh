@@ -2,6 +2,9 @@
 
 export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 
+# Fix permissions for mounted volumes
+chown -R 1000:1000 /app/music /app/temp_downloads
+
 # Generate config.py from environment variables
 echo "# Generated config.py from Docker environment variables" > config.py
 echo "import os" >> config.py
@@ -27,6 +30,7 @@ echo "LASTFM_ENABLED = os.getenv(\"LASTFM_ENABLED\", \"${RECOMMAND_LASTFM_ENABLE
 echo "LASTFM_API_KEY = os.getenv(\"LASTFM_API_KEY\", \"${RECOMMAND_LASTFM_API_KEY:-}\")" >> config.py
 echo "LASTFM_API_SECRET = os.getenv(\"LASTFM_API_SECRET\", \"${RECOMMAND_LASTFM_API_SECRET:-}\")" >> config.py
 echo "LASTFM_USERNAME = os.getenv(\"LASTFM_USERNAME\", \"${RECOMMAND_LASTFM_USERNAME:-}\")" >> config.py
+echo "LASTFM_PASSWORD = os.getenv(\"LASTFM_PASSWORD\", \"${RECOMMAND_LASTFM_PASSWORD:-}\")" >> config.py
 echo "LASTFM_PASSWORD_HASH = os.getenv(\"LASTFM_PASSWORD_HASH\", \"${RECOMMAND_LASTFM_PASSWORD_HASH:-}\")" >> config.py
 echo "LASTFM_SESSION_KEY = os.getenv(\"LASTFM_SESSION_KEY\", \"${RECOMMAND_LASTFM_SESSION_KEY:-}\")" >> config.py
 echo "" >> config.py
@@ -36,6 +40,7 @@ echo "LLM_ENABLED = os.getenv(\"LLM_ENABLED\", \"${RECOMMAND_LLM_ENABLED:-false}
 echo "LLM_PROVIDER = os.getenv(\"LLM_PROVIDER\", \"${RECOMMAND_LLM_PROVIDER:-gemini}\")" >> config.py
 echo "LLM_API_KEY = os.getenv(\"LLM_API_KEY\", \"${RECOMMAND_LLM_API_KEY:-}\")" >> config.py
 echo "LLM_MODEL_NAME = os.getenv(\"LLM_MODEL_NAME\", \"${RECOMMAND_LLM_MODEL_NAME:-}\")" >> config.py
+echo "LLM_BASE_URL = os.getenv(\"LLM_BASE_URL\", \"${RECOMMAND_LLM_BASE_URL:-}\")" >> config.py
 echo "LLM_TARGET_COMMENT = os.getenv(\"LLM_TARGET_COMMENT\", \"${RECOMMAND_LLM_TARGET_COMMENT:-llm_recommendation}\")" >> config.py
 echo "" >> config.py
 

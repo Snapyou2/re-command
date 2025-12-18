@@ -33,6 +33,7 @@ async def process_navidrome_cleanup():
         api_key=LASTFM_API_KEY,
         api_secret=LASTFM_API_SECRET,
         username=LASTFM_USERNAME,
+        password=LASTFM_PASSWORD,
         session_key=LASTFM_SESSION_KEY,
         lastfm_enabled=LASTFM_ENABLED
     )
@@ -71,6 +72,7 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
         api_key=LASTFM_API_KEY,
         api_secret=LASTFM_API_SECRET,
         username=LASTFM_USERNAME,
+        password=LASTFM_PASSWORD,
         session_key=LASTFM_SESSION_KEY,
         lastfm_enabled=LASTFM_ENABLED
     )

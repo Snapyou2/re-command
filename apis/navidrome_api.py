@@ -636,3 +636,6 @@ class NavidromeAPI:
 
         # Remove empty directories in source folder
         remove_empty_dirs(source_folder)
+
+        # Fix permissions on organized files
+        os.system(f'chown -R 1000:1000 "{destination_base_folder}"')

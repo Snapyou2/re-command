@@ -152,7 +152,7 @@ def update_download_status(download_id, status, message=None, title=None, curren
             'artist': 'Playlist Download', # Generic placeholder
             'title': title or f'Download {download_id[:8]}...',
             'status': status,
-            'start_time': datetime.now().isoformat(), # Not the real start time, but best we can do
+            'start_time': datetime.now().isoformat(),
             'message': message,
             'current_track_count': current_track_count,
             'total_track_count': total_track_count
@@ -317,6 +317,7 @@ def get_config():
         "LLM_PROVIDER": LLM_PROVIDER,
         "LLM_API_KEY": "••••••••" if LLM_API_KEY else "",
         "LLM_MODEL_NAME": globals().get("LLM_MODEL_NAME", ""),
+        "LLM_BASE_URL": globals().get("LLM_BASE_URL", ""),
         "CRON_SCHEDULE": get_current_cron_schedule()
     })
 
@@ -514,7 +515,7 @@ def get_lastfm_playlist():
         return jsonify({"status": "error", "message": "Last.fm credentials not configured. Please set LASTFM_USERNAME, LASTFM_API_KEY, and LASTFM_API_SECRET in the config menu."}), 400
 
     try:
-        lastfm_api = LastFmAPI(LASTFM_API_KEY, LASTFM_API_SECRET, LASTFM_USERNAME, LASTFM_SESSION_KEY, LASTFM_ENABLED)
+        lastfm_api = LastFmAPI(LASTFM_API_KEY, LASTFM_API_SECRET, LASTFM_USERNAME, LASTFM_PASSWORD, LASTFM_SESSION_KEY, LASTFM_ENABLED)
         lf_recs = asyncio.run(lastfm_api.get_lastfm_recommendations())
         print(f"Last.fm recommendations found: {len(lf_recs)}")
         if lf_recs:
@@ -531,7 +532,7 @@ def trigger_lastfm_download():
     print("Attempting to trigger Last.fm download via background script...")
     try:
         # Check if there are recommendations first
-        lastfm_api = LastFmAPI(LASTFM_API_KEY, LASTFM_API_SECRET, LASTFM_USERNAME, LASTFM_SESSION_KEY, LASTFM_ENABLED)
+        lastfm_api = LastFmAPI(LASTFM_API_KEY, LASTFM_API_SECRET, LASTFM_USERNAME, LASTFM_PASSWORD, LASTFM_SESSION_KEY, LASTFM_ENABLED)
         recs = asyncio.run(lastfm_api.get_lastfm_recommendations())
         if not recs:
             return jsonify({"status": "error", "message": "No Last.fm recommendations found. Please check your credentials and try again."}), 400
@@ -565,7 +566,7 @@ def trigger_navidrome_cleanup():
     try:
         # Initialize API instances for cleanup
         listenbrainz_api = ListenBrainzAPI(ROOT_LB, TOKEN_LB, USER_LB, LISTENBRAINZ_ENABLED)
-        lastfm_api = LastFmAPI(LASTFM_API_KEY, LASTFM_API_SECRET, LASTFM_USERNAME, LASTFM_SESSION_KEY, LASTFM_ENABLED)
+        lastfm_api = LastFmAPI(LASTFM_API_KEY, LASTFM_API_SECRET, LASTFM_USERNAME, LASTFM_PASSWORD, LASTFM_SESSION_KEY, LASTFM_ENABLED)
 
         import asyncio
         # Use the global navidrome_api_global instance
@@ -726,7 +727,7 @@ def submit_lastfm_feedback():
             return jsonify({"status": "error", "message": "Last.fm credentials not configured"}), 400
 
         print(f"Creating LastFmAPI with API_KEY={LASTFM_API_KEY}, API_SECRET={'*' * len(LASTFM_API_SECRET) if LASTFM_API_SECRET else None}, USERNAME={LASTFM_USERNAME}, SESSION_KEY={'*' * len(LASTFM_SESSION_KEY) if LASTFM_SESSION_KEY else None}")
-        lastfm_api = LastFmAPI(LASTFM_API_KEY, LASTFM_API_SECRET, LASTFM_USERNAME, LASTFM_SESSION_KEY, LASTFM_ENABLED)
+        lastfm_api = LastFmAPI(LASTFM_API_KEY, LASTFM_API_SECRET, LASTFM_USERNAME, LASTFM_PASSWORD, LASTFM_SESSION_KEY, LASTFM_ENABLED)
         print("Calling love_track...")
         lastfm_api.love_track(track, artist)
         print("Feedback submitted successfully")
@@ -743,8 +744,10 @@ def submit_lastfm_feedback():
 async def get_llm_playlist():
     if not LLM_ENABLED:
         return jsonify({"status": "error", "message": "LLM suggestions are not enabled in the configuration."}), 400
-    if not LLM_API_KEY:
+    if not LLM_API_KEY and LLM_PROVIDER != 'llama':
         return jsonify({"status": "error", "message": "LLM API key is not configured."}), 400
+    if LLM_PROVIDER == 'llama' and not LLM_BASE_URL:
+        return jsonify({"status": "error", "message": "Base URL is required for Llama.cpp."}), 400
 
     try:
         listenbrainz_api = ListenBrainzAPI(ROOT_LB, TOKEN_LB, USER_LB, LISTENBRAINZ_ENABLED)
@@ -757,14 +760,33 @@ async def get_llm_playlist():
             provider=LLM_PROVIDER,
             gemini_api_key=LLM_API_KEY if LLM_PROVIDER == 'gemini' else None,
             openrouter_api_key=LLM_API_KEY if LLM_PROVIDER == 'openrouter' else None,
-            model_name=globals().get('LLM_MODEL_NAME')
+            llama_api_key=LLM_API_KEY if LLM_PROVIDER == 'llama' else None,
+            model_name=globals().get('LLM_MODEL_NAME'),
+            base_url=globals().get('LLM_BASE_URL') if LLM_PROVIDER == 'llama' else None
         )
         recommendations = llm_api.get_recommendations(scrobbles)
 
         if recommendations:
-            # Fetch recording_mbid and release_mbid for each recommendation to enable feedback and album art
-            processed_recommendations = []
+            # Check Deezer availability for each recommendation and filter out unavailable tracks
+            available_recommendations = []
             for rec in recommendations:
+                try:
+                    # Check if track is available on Deezer
+                    deezer_link = await deezer_api_global.get_deezer_track_link(rec['artist'], rec['title'])
+                    if deezer_link:
+                        available_recommendations.append(rec)
+                    else:
+                        print(f"LLM recommendation not available on Deezer: {rec['artist']} - {rec['title']}")
+                except Exception as e:
+                    print(f"Error checking Deezer availability for {rec['artist']} - {rec['title']}: {e}")
+                    # If checking availability is impossible, include it anyway to avoid losing recommendations due to API errors
+                    available_recommendations.append(rec)
+
+            print(f"LLM generated {len(recommendations)} recommendations, {len(available_recommendations)} available on Deezer")
+
+            # Fetch recording_mbid and release_mbid for each available recommendation to enable feedback and album art
+            processed_recommendations = []
+            for rec in available_recommendations:
                 # Respect MusicBrainz rate limit (1 req/sec)
                 await asyncio.sleep(1)
                 mbid = await listenbrainz_api.get_recording_mbid_from_track(rec['artist'], rec['title'])
@@ -796,9 +818,11 @@ async def get_llm_playlist():
 @app.route('/api/trigger_llm_download', methods=['POST'])
 def trigger_llm_download():
     # This endpoint will fetch recommendations and then trigger downloads.
-    # For simplicity, we'll re-fetch. A better implementation might cache the result from get_llm_playlist.
-    if not LLM_ENABLED or not LLM_API_KEY:
+    # For simplicity, it wil be re-fetched. A better implementation might cache the result from get_llm_playlist.
+    if not LLM_ENABLED or (not LLM_API_KEY and LLM_PROVIDER != 'llama'):
         return jsonify({"status": "error", "message": "LLM suggestions are not enabled or configured."}), 400
+    if LLM_PROVIDER == 'llama' and not LLM_BASE_URL:
+        return jsonify({"status": "error", "message": "Base URL is required for Llama.cpp."}), 400
 
     listenbrainz_api = ListenBrainzAPI(ROOT_LB, TOKEN_LB, USER_LB, LISTENBRAINZ_ENABLED)
     scrobbles = asyncio.run(listenbrainz_api.get_weekly_scrobbles())
@@ -809,7 +833,9 @@ def trigger_llm_download():
         provider=LLM_PROVIDER,
         gemini_api_key=LLM_API_KEY if LLM_PROVIDER == 'gemini' else None,
         openrouter_api_key=LLM_API_KEY if LLM_PROVIDER == 'openrouter' else None,
-        model_name=globals().get('LLM_MODEL_NAME')
+        llama_api_key=LLM_API_KEY if LLM_PROVIDER == 'llama' else None,
+        model_name=globals().get('LLM_MODEL_NAME'),
+        base_url=globals().get('LLM_BASE_URL') if LLM_PROVIDER == 'llama' else None
     )
     recommendations = llm_api.get_recommendations(scrobbles)
 
@@ -1051,7 +1077,146 @@ async def get_deezer_album_art():
             return jsonify({"status": "info", "message": "Deezer album art not found"}), 404
     except Exception as e:
         print(f"Error getting Deezer album art for {artist} - {album_title}: {e}")
-        return jsonify({"status": "error", "message": f"Error getting Deezer album art: {e}"}), 500
+        return jsonify({"status": "error", "message": f"Error getting Deeezer album art: {e}"}), 500
+
+@app.route('/api/create_smart_playlists', methods=['POST'])
+def create_smart_playlists():
+    """
+    Create Navidrome Smart Playlist (.nsp) files for enabled recommendation types.
+    These files will be automatically detected by Navidrome and appear as playlists.
+    Only creates playlists for services that are enabled in the configuration.
+    """
+    try:
+        # Get the music library path from config
+        music_library_path = MUSIC_LIBRARY_PATH
+
+        # Check if music library path is configured
+        if not music_library_path or music_library_path == "/path/to/music":
+            return jsonify({
+                "status": "error",
+                "message": "Music library path is not properly configured. Please set MUSIC_LIBRARY_PATH in config.py."
+            }), 400
+
+        # Ensure the music library directory exists
+        if not os.path.exists(music_library_path):
+            return jsonify({
+                "status": "error",
+                "message": f"Music library path does not exist: {music_library_path}"
+            }), 400
+
+        # Define the smart playlist templates based on comment strings from config
+        # Only include playlists for enabled services
+        playlist_templates = []
+
+        # Add ListenBrainz playlist if enabled
+        if LISTENBRAINZ_ENABLED:
+            playlist_templates.append({
+                "filename": "lb.nsp",
+                "name": "ListenBrainz Recommendations",
+                "comment": "Tracks where comment is lb_recommendation",
+                "comment_value": TARGET_COMMENT,
+                "source": "ListenBrainz"
+            })
+
+        # Add Last.fm playlist if enabled
+        if LASTFM_ENABLED:
+            playlist_templates.append({
+                "filename": "lastfm.nsp",
+                "name": "Last.fm Recommendations",
+                "comment": "Tracks where comment is lastfm_recommendation",
+                "comment_value": LASTFM_TARGET_COMMENT,
+                "source": "Last.fm"
+            })
+
+        # Add LLM playlist if enabled
+        if LLM_ENABLED:
+            playlist_templates.append({
+                "filename": "llm.nsp",
+                "name": "LLM Recommendations",
+                "comment": "Tracks where comment is llm_recommendation",
+                "comment_value": LLM_TARGET_COMMENT,
+                "source": "LLM"
+            })
+
+        # Add Album Recommendations playlist if album recommendations are enabled
+        if ALBUM_RECOMMENDATION_ENABLED:
+            playlist_templates.append({
+                "filename": "album.nsp",
+                "name": "Album Recommendations",
+                "comment": "Tracks where comment is album_recommendation",
+                "comment_value": ALBUM_RECOMMENDATION_COMMENT,
+                "source": "Album Recommendations"
+            })
+
+        # Check if any playlists are configured to be created
+        if not playlist_templates:
+            return jsonify({
+                "status": "info",
+                "message": "No recommendation sources are enabled in the configuration. Please enable ListenBrainz, Last.fm, LLM, or Album Recommendations in the settings to create smart playlists."
+            })
+
+        created_files = []
+        failed_files = []
+
+        for template in playlist_templates:
+            try:
+                # Create the NSP file content
+                nsp_content = {
+                    "name": template["name"],
+                    "comment": template["comment"],
+                    "all": [
+                        {
+                            "is": {
+                                "comment": template["comment_value"]
+                            }
+                        }
+                    ],
+                    "sort": "title",
+                    "order": "asc",
+                    "limit": 10000
+                }
+
+                # Write the NSP file to the music library
+                file_path = os.path.join(music_library_path, template["filename"])
+
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(nsp_content, f, indent=2)
+
+                created_files.append(template["filename"])
+                print(f"Created smart playlist file: {file_path}")
+
+            except Exception as e:
+                failed_files.append({
+                    "filename": template["filename"],
+                    "error": str(e),
+                    "source": template["source"]
+                })
+                print(f"Failed to create smart playlist file {template['filename']}: {e}")
+
+        if created_files:
+            message = f"Successfully created {len(created_files)} smart playlist files: {', '.join(created_files)}"
+            if failed_files:
+                message += f" | Failed to create {len(failed_files)} files: {', '.join([f['filename'] for f in failed_files])}"
+            return jsonify({
+                "status": "success",
+                "message": message,
+                "created_files": created_files,
+                "failed_files": failed_files
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Failed to create any smart playlist files",
+                "failed_files": failed_files
+            }), 500
+
+    except Exception as e:
+        print(f"Error creating smart playlists: {e}")
+        traceback.print_exc()
+        return jsonify({
+            "status": "error",
+            "message": f"An unexpected error occurred while creating smart playlists: {e}"
+        }), 500
 
 # --- Global Error Handler ---
 @app.errorhandler(Exception)

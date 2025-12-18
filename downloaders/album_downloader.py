@@ -241,6 +241,11 @@ class AlbumDownloader:
             else:
                 print(f"Deemix: Successfully found {len(downloaded_files)} downloaded files.")
 
+            if downloaded_files:
+                # Fix permissions
+                album_dir = os.path.dirname(downloaded_files[0])
+                os.system(f'chown -R 1000:1000 "{album_dir}"')
+
             return downloaded_files
         except Exception as e:
             print(f"Error downloading album {album_info['artist']} - {album_info['album']} ({deezer_link}) with deemix: {e}")
@@ -329,6 +334,8 @@ class AlbumDownloader:
 
             if downloaded_files:
                 print(f"Successfully downloaded album {album_info['artist']} - {album_info['album']} using streamrip")
+                # Fix permissions
+                os.system(f'chown -R 1000:1000 "{found_dir}"')
                 return downloaded_files
             else:
                 print(f"ERROR: Successfully called rip() for album {album_info['artist']} - {album_info['album']}, but could not find the downloaded files in {output_dir}.")

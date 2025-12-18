@@ -125,6 +125,12 @@ class TrackDownloader:
                 print(f"deemix stderr: {result.stderr}")
                 # Fallback: search for the file using improved logic
                 downloaded_file = self._find_downloaded_file_deemix(song_info, output_dir)
+
+            if downloaded_file:
+                # Fix permissions
+                dir_path = os.path.dirname(downloaded_file)
+                os.system(f'chown -R 1000:1000 "{dir_path}"')
+
             return downloaded_file
         except Exception as e:
             print(f"Error downloading track {song_info['artist']} - {song_info['title']} ({deezer_link}) with deemix: {e}")
@@ -208,6 +214,9 @@ class TrackDownloader:
                 downloaded_file_path = await self._find_downloaded_file_streamrip(song_info, temp_download_folder)
 
             if downloaded_file_path and os.path.exists(downloaded_file_path):
+                # Fix permissions
+                dir_path = os.path.dirname(downloaded_file_path)
+                os.system(f'chown -R 1000:1000 "{dir_path}"')
                 return downloaded_file_path
             else:
                 print(f"  ❌ Could not find downloaded file for {song_info['artist']} - {song_info['title']}", file=sys.stderr)

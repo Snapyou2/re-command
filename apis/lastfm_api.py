@@ -10,10 +10,11 @@ from apis.deezer_api import DeezerAPI
 from config import LASTFM_ENABLED as GLOBAL_LASTFM_ENABLED
 
 class LastFmAPI:
-    def __init__(self, api_key, api_secret, username, session_key, lastfm_enabled):
+    def __init__(self, api_key, api_secret, username, password, session_key, lastfm_enabled):
         self._api_key = api_key
         self._api_secret = api_secret
         self._username = username
+        self._password = password
         self._session_key = session_key
         self._lastfm_enabled = lastfm_enabled
         self.network = None
@@ -48,6 +49,56 @@ class LastFmAPI:
                 raise
         return None
 
+    def _authenticate_mobile(self):
+        """Authenticates using mobile authentication (username/password)."""
+        if not self._password:
+            return None
+
+        print("Attempting Last.fm mobile authentication...")
+
+        # Prepare parameters for auth.getMobileSession
+        params = {
+            'method': 'auth.getMobileSession',
+            'username': self._username,
+            'password': self._password,
+            'api_key': self._api_key
+        }
+
+        # Generate API signature
+        sorted_params = sorted(params.items())
+        sig_string = ''.join(f"{k}{v}" for k, v in sorted_params) + self._api_secret
+        api_sig = hashlib.md5(sig_string.encode('utf-8')).hexdigest()
+
+        # Add signature to params
+        params['api_sig'] = api_sig
+        params['format'] = 'json'
+
+        url = "https://ws.audioscrobbler.com/2.0/"
+
+        try:
+            response = self._make_request_with_retries(
+                method="POST",
+                url=url,
+                headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                data=params
+            )
+
+            if response and response.status_code == 200:
+                data = response.json()
+                if 'session' in data and 'key' in data['session']:
+                    session_key = data['session']['key']
+                    print("Successfully authenticated with Last.fm using mobile authentication!")
+                    return session_key
+                else:
+                    print(f"Mobile authentication failed: {data}")
+                    return None
+            else:
+                print(f"Mobile authentication HTTP error: {response.status_code if response else 'No response'}")
+                return None
+        except Exception as e:
+            print(f"Error during mobile authentication: {e}")
+            return None
+
     def authenticate_lastfm(self):
         """Authenticates with Last.fm using pylast."""
         api_key = self._api_key
@@ -67,28 +118,51 @@ class LastFmAPI:
                 session_key=session_key
             )
         else:
-            # Get session key if not configured
-            self.network = pylast.LastFMNetwork(api_key=api_key, api_secret=api_secret)
-            skg = pylast.SessionKeyGenerator(self.network)
-            url = skg.get_web_auth_url()
+            # Try mobile authentication first if password is provided
+            session_key = self._authenticate_mobile()
+            if session_key:
+                self.network = pylast.LastFMNetwork(
+                    api_key=api_key,
+                    api_secret=api_secret,
+                    username=username,
+                    session_key=session_key
+                )
+            else:
+                # Fall back to desktop/web authentication
+                print("Mobile authentication not available or failed. Attempting desktop authentication...")
+                self.network = pylast.LastFMNetwork(api_key=api_key, api_secret=api_secret)
+                skg = pylast.SessionKeyGenerator(self.network)
+                url = skg.get_web_auth_url()
 
-            print(f"Please authorize this script to access your account: {url}\n")
-            webbrowser.open(url)
+                print(f"Please authorize this application by visiting: {url}")
+                print("The application will automatically detect when you've authorized it.")
 
-            time.sleep(5)
+                # Don't open webbrowser in Docker/container environment
+                # Poll for authorization instead of waiting for user input
+                max_attempts = 60  # 5 minutes with 5 second intervals
+                attempt = 0
 
-            while True:
-                input("Press Enter after you have authorized the application...")
-                try:
-                    session_key = skg.get_web_auth_session_key(url)
-                    self.network.session_key = session_key
-                    break
-                except pylast.WSError as e:
-                    if e.details == "The token supplied to this request is invalid. It has either expired or not yet been authorised.":
-                        print("Token still invalid or not authorized yet. Please ensure you've authorized and try again.")
-                    else:
-                        print(f"Error during authentication: {e.details}")
-                        return None
+                while attempt < max_attempts:
+                    try:
+                        session_key = skg.get_web_auth_session_key(url)
+                        self.network.session_key = session_key
+                        print("Successfully obtained Last.fm session key!")
+                        print(f"Session key: {session_key}")
+                        print("Please set this as the RECOMMAND_LASTFM_SESSION_KEY environment variable for future use.")
+                        break
+                    except pylast.WSError as e:
+                        if e.details == "The token supplied to this request is invalid. It has either expired or not yet been authorised.":
+                            attempt += 1
+                            if attempt < max_attempts:
+                                print(f"Waiting for authorization... ({attempt}/{max_attempts})")
+                                time.sleep(5)
+                            else:
+                                print("Authorization timeout. Please ensure you've visited the URL and authorized the application.")
+                                print(f"Authorization URL: {url}")
+                                return None
+                        else:
+                            print(f"Error during authentication: {e.details}")
+                            return None
         return self.network
 
     def get_recommended_tracks(self, limit=100):

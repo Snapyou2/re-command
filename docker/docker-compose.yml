@@ -1,15 +1,12 @@
 services:
   re-command:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+    image: ghcr.io/snapyou2/re-command:latest
     container_name: re-command-container
-    image: re-command-app
     ports:
       - "5000:5000"
     volumes:
-      - ${MUSIC_PATH:-../music}:/app/music
-      - ${MUSIC_PATH:-../music}/.tempfolder:/app/temp_downloads
+      - ${MUSIC_PATH:-/home/snap/Music}:/app/music
+      - ${MUSIC_PATH:-/home/snap/Music}/.tempfolder:/app/temp_downloads
     environment:
       # Navidrome Configuration (empty defaults, configure via web UI)
       - RECOMMAND_ROOT_ND=${RECOMMAND_ROOT_ND:-}
@@ -33,6 +30,7 @@ services:
       - RECOMMAND_LLM_PROVIDER=${RECOMMAND_LLM_PROVIDER:-}
       - RECOMMAND_LLM_API_KEY=${RECOMMAND_LLM_API_KEY:-}
       - RECOMMAND_LLM_MODEL_NAME=${RECOMMAND_LLM_MODEL_NAME:-}
+      - RECOMMAND_LLM_BASE_URL=${RECOMMAND_LLM_BASE_URL:-}
 
       # Deezer Configuration (empty, configurable via web UI)
       - RECOMMAND_DEEZER_ARL=${RECOMMAND_DEEZER_ARL:-}
@@ -54,6 +52,8 @@ services:
       - RECOMMAND_DEEZER_MAX_CONCURRENT_REQUESTS=${RECOMMAND_DEEZER_MAX_CONCURRENT_REQUESTS:-3}
 
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - re-command-network
 

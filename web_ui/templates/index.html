@@ -1005,6 +1005,13 @@
                                 <input type="text" id="lastfmUsername" placeholder="Your Last.fm username">
                             </div>
                             <div class="form-group">
+                                <label for="lastfmPassword">
+                                    Password:
+                                    <span class="help-icon" title="Your Last.fm password for automatic authentication with session key retrieval">ℹ️</span>
+                                </label>
+                                <input type="password" id="lastfmPassword" placeholder="Your Last.fm password">
+                            </div>
+                            <div class="form-group">
                                 <label for="lastfmApiKey">
                                     API Key:
                                     <span class="help-icon" title="Get your API key from https://www.last.fm/api/account/create → Create API account → Copy API key">ℹ️</span>
@@ -1017,13 +1024,6 @@
                                     <span class="help-icon" title="Get your API secret from https://www.last.fm/api/account/create → Create API account → Copy Shared secret">ℹ️</span>
                                 </label>
                                 <input type="text" id="lastfmApiSecret" placeholder="Your Last.fm API secret">
-                            </div>
-                            <div class="form-group">
-                                <label for="lastfmSessionKey">
-                                    Session Key:
-                                    <span class="help-icon" title="Optional: OAuth token for Last.fm API access. If empty, you'll be prompted to authorize the app interactively">ℹ️</span>
-                                </label>
-                                <input type="text" id="lastfmSessionKey" placeholder="Your Last.fm session key (optional)">
                             </div>
                         </div>
 
@@ -1039,15 +1039,23 @@
                                 <select id="llmProvider" style="padding: 8px; border-radius: 4px; background-color: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color);">
                                     <option value="gemini">Gemini</option>
                                     <option value="openrouter">OpenRouter</option>
+                                    <option value="llama">Llama.cpp</option>
                                 </select>
                             </div>
                             <div class="form-group">
                                 <label for="llmModelName">Model Name (optional):</label>
                                 <input type="text" id="llmModelName" placeholder="e.g., gemini-2.5-flash">
                             </div>
-                            <div class="form-group">
+                            <div class="form-group" id="llmApiKeyGroup">
                                 <label for="llmApiKey">API Key:</label>
                                 <input type="password" id="llmApiKey" placeholder="Your LLM API Key">
+                            </div>
+                            <div class="form-group" id="llmBaseUrlGroup" style="display: none;">
+                                <label for="llmBaseUrl">Base URL:</label>
+                                <input type="text" id="llmBaseUrl" placeholder="e.g., http://localhost:8080/v1/chat/completions">
+                                <small style="color: #b0b0b0; display: block; margin-top: 5px;">
+                                    Required for Llama.cpp. URL of your local Llama.cpp server.
+                                </small>
                             </div>
                         </div>
 
@@ -1113,18 +1121,26 @@
                     </div>
                 </details>
 
-                <details>
-                    <summary>Maintenance</summary>
-                    <div style="padding: 15px;">
-                        <div class="form-group">
-                            <label>Navidrome Cleanup:</label>
-                            <button onclick="triggerNavidromeCleanup()">Remove Tagged Songs</button>
-                            <small style="color: #b0b0b0; display: block; margin-top: 5px;">
-                                Manually remove songs tagged with recommendation comments from Navidrome
-                            </small>
-                        </div>
-                    </div>
-                </details>
+<details>
+    <summary>Maintenance</summary>
+    <div style="padding: 15px;">
+        <div class="form-group">
+            <label>Navidrome Cleanup:</label>
+            <button onclick="triggerNavidromeCleanup()">Remove Tagged Songs</button>
+            <small style="color: #b0b0b0; display: block; margin-top: 5px;">
+                Manually remove songs tagged with recommendation comments from Navidrome
+            </small>
+        </div>
+
+        <div class="form-group" style="margin-top: 20px;">
+            <label>Smart Playlist Creation:</label>
+            <button onclick="createSmartPlaylists()">Create Smart Playlists</button>
+            <small style="color: #b0b0b0; display: block; margin-top: 5px;">
+                Create .nsp files for automatic recommendation playlists based on comment tags
+            </small>
+        </div>
+    </div>
+</details>
             </div>
         </div>
     </div>
@@ -1180,6 +1196,20 @@
         function updateLlmVisibility() {
             const isEnabled = document.getElementById('llmEnabled').checked;
             document.getElementById('llmOptions').style.display = isEnabled ? 'block' : 'none';
+            updateLlmProviderVisibility();
+        }
+
+        function updateLlmProviderVisibility() {
+            const provider = document.getElementById('llmProvider').value;
+            const baseUrlGroup = document.getElementById('llmBaseUrlGroup');
+            const apiKeyGroup = document.getElementById('llmApiKeyGroup');
+            if (provider === 'llama') {
+                baseUrlGroup.style.display = 'block';
+                apiKeyGroup.style.display = 'none';
+            } else {
+                baseUrlGroup.style.display = 'none';
+                apiKeyGroup.style.display = 'block';
+            }
         }
 
         function updateLastFmVisibility() {
@@ -1191,6 +1221,7 @@
             document.getElementById('listenbrainzEnabled').addEventListener('change', updateListenBrainzVisibility);
             document.getElementById('lastfmEnabled').addEventListener('change', updateLastFmVisibility);
             document.getElementById('llmEnabled').addEventListener('change', updateLlmVisibility);
+            document.getElementById('llmProvider').addEventListener('change', updateLlmProviderVisibility);
         });        // Close modals when clicking outside of them
         window.onclick = function(event) {
             const settingsModal = document.getElementById('settingsModal');
@@ -1214,24 +1245,61 @@
             }
         }
 
-        async function triggerNavidromeCleanup() {
-            const response = await fetch('/api/trigger_navidrome_cleanup', {
-                method: 'POST'
-            });
-            const data = await response.json();
-            showMessage(data.status, data.message);
-            
-            // Log debug information to console
-            if (data.debug_info) {
-                console.groupCollapsed('Deezer API Debug Info (Fresh Release Download)');
-                console.log('Album Info Sent:', data.debug_info.album_info_sent);
-                console.log('Download Result:', data.debug_info.download_result);
-                if (data.debug_info.error_traceback) {
-                    console.error('Error Traceback:', data.debug_info.error_traceback);
-                }
-                console.groupEnd();
-            }
+async function triggerNavidromeCleanup() {
+    const response = await fetch('/api/trigger_navidrome_cleanup', {
+        method: 'POST'
+    });
+    const data = await response.json();
+    showMessage(data.status, data.message);
+
+    // Log debug information to console
+    if (data.debug_info) {
+        console.groupCollapsed('Deezer API Debug Info (Fresh Release Download)');
+        console.log('Album Info Sent:', data.debug_info.album_info_sent);
+        console.log('Download Result:', data.debug_info.download_result);
+        if (data.debug_info.error_traceback) {
+            console.error('Error Traceback:', data.debug_info.error_traceback);
         }
+        console.groupEnd();
+    }
+}
+
+async function createSmartPlaylists() {
+    const button = event.target;
+    const originalContent = button.innerHTML;
+
+    // Update button to show loading state
+    button.innerHTML = '<div class="spinner"></div>Creating...';
+    button.disabled = true;
+
+    try {
+        const response = await fetch('/api/create_smart_playlists', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            showMessage('success', data.message);
+            console.log('Smart playlists created:', data.created_files);
+            if (data.failed_files && data.failed_files.length > 0) {
+                console.warn('Failed to create some playlists:', data.failed_files);
+            }
+        } else {
+            showMessage('error', data.message);
+            console.error('Error creating smart playlists:', data.failed_files);
+        }
+    } catch (error) {
+        console.error('Network error creating smart playlists:', error);
+        showMessage('error', 'Failed to create smart playlists: ' + error.message);
+    } finally {
+        // Reset button after a delay
+        setTimeout(() => {
+            button.innerHTML = originalContent;
+            button.disabled = false;
+        }, 2000);
+    }
+}
 
         // --- Download Queue Functions ---
         const downloadQueue = []; // In-memory queue for display
@@ -2052,7 +2120,7 @@
             document.getElementById('lastfmApiKey').value = config.LASTFM_API_KEY !== null ? config.LASTFM_API_KEY : '';
             document.getElementById('lastfmApiSecret').value = config.LASTFM_API_SECRET !== null ? config.LASTFM_API_SECRET : '';
             document.getElementById('lastfmUsername').value = config.LASTFM_USERNAME !== null ? config.LASTFM_USERNAME : '';
-            document.getElementById('lastfmSessionKey').value = config.LASTFM_SESSION_KEY !== null ? config.LASTFM_SESSION_KEY : '';
+            document.getElementById('lastfmPassword').value = config.LASTFM_PASSWORD !== null ? config.LASTFM_PASSWORD : '';
             document.getElementById('deezerArl').value = config.DEEZER_ARL !== null ? config.DEEZER_ARL : '';
             document.getElementById('downloadMethod').value = config.DOWNLOAD_METHOD || 'streamrip';
             document.getElementById('albumRecommendationEnabled').checked = config.ALBUM_RECOMMENDATION_ENABLED || false;
@@ -2062,6 +2130,7 @@
             document.getElementById('llmProvider').value = config.LLM_PROVIDER || 'gemini';
             document.getElementById('llmModelName').value = config.LLM_MODEL_NAME || '';
             document.getElementById('llmApiKey').value = config.LLM_API_KEY ? '••••••••' : '';
+            document.getElementById('llmBaseUrl').value = config.LLM_BASE_URL || '';
 
 
             // Set global variable for album recommendation setting
@@ -2152,7 +2221,7 @@
                 LASTFM_API_KEY: document.getElementById('lastfmApiKey').value.trim(),
                 LASTFM_API_SECRET: document.getElementById('lastfmApiSecret').value.trim(),
                 LASTFM_USERNAME: document.getElementById('lastfmUsername').value.trim(),
-                LASTFM_SESSION_KEY: document.getElementById('lastfmSessionKey').value.trim(),
+                LASTFM_PASSWORD: document.getElementById('lastfmPassword').value.trim(),
                 DEEZER_ARL: document.getElementById('deezerArl').value.trim(),
                 DOWNLOAD_METHOD: document.getElementById('downloadMethod').value,
                 ALBUM_RECOMMENDATION_ENABLED: document.getElementById('albumRecommendationEnabled').checked,
@@ -2161,7 +2230,8 @@
                 LLM_ENABLED: document.getElementById('llmEnabled').checked,
                 LLM_PROVIDER: document.getElementById('llmProvider').value,
                 LLM_MODEL_NAME: document.getElementById('llmModelName').value.trim(),
-                LLM_API_KEY: document.getElementById('llmApiKey').value.trim()
+                LLM_API_KEY: document.getElementById('llmApiKey').value.trim(),
+                LLM_BASE_URL: document.getElementById('llmBaseUrl').value.trim()
             };
 
             try {

@@ -8,10 +8,10 @@
 
 ## Key Features
 
-*   **Multi-Source Recommendations:** Fetches music recommendations playlists from ListenBrainz, Last.fm, and LLM-powered suggestions (gemini/openrouter). Includes a built-in cron scheduling for weekly automated downloads
+*   **Multi-Source Recommendations:** Fetches music recommendations playlists from ListenBrainz, Last.fm, and LLM-powered suggestions (gemini/openrouter/llama.cpp). Includes a built-in cron scheduling for weekly automated downloads
 *   **Dual Download Methods:** Supports both modern Streamrip v2 and legacy Deemix for downloading from Deezer
 *   **Fresh Releases Discovery:** Automatically shows newly released albums from ListenBrainz with a quick download button
-*   **Universal Link Downloads:** Download music straight to your sever with Spotify, YouTube, Deezer, and other platforms links using Songlink API integration
+*   **Universal Link Downloads:** Download music straight to your sever with Spotify, YouTube, Deezer, and other platforms links using Songlink API integration (still in beta)
 *   **Track Previews & Feedback:** Preview tracks before downloading and submit feedback manually to ListenBrainz/Last.fm
 *   **Dynamic Playlist Support:** Downloaded tracks are tagged with configurable comment markers for dynamic playlists
 *   **Automated Library Maintenance:** Removes tracks from previous recommendations and submit scrobbling feedbacks based on your Navidrome ratings
@@ -19,6 +19,7 @@
 
 ## Table of Contents
 
+- [Prerequisites](#prerequisites)
 - [Quick Start with Docker Compose](#quick-start-with-docker-compose)
 - [Alternative: Quick Start with Docker (Script)](#alternative-quick-start-with-docker-script)
 - [Screenshots](#screenshots)
@@ -30,23 +31,33 @@
 - [Troubleshooting](#troubleshooting)
 - [Contributing / Roadmap](#contributing--roadmap)
 
-## Quick Start with Docker Compose
-
-### Prerequisites
+## Prerequisites
 
 - [Docker](https://www.docker.com/get-started) and [Docker Compose](https://docs.docker.com/compose/) installed
 - A running [Navidrome](https://www.navidrome.org/) instance
 - [Deezer](https://www.deezer.com/) account with ARL token
-- A [ListenBrainz](https://listenbrainz.org/) and/or [Last.fm](https://www.last.fm/) account (recommended)
+- A [ListenBrainz](https://listenbrainz.org/) account for ListenBrainz recommendations, fresh releases and LLM playlists
 
-### 1. Clone and Setup
+Optional
+- A [Last.fm API account](https://www.last.fm/api/account/create) for Last.fm recommendations
+- A LLM API key or base URL for llama.cpp 
+
+## Quick Start with Docker Compose Image
+
+### 1. Download only the docker.yml 
 
 ```bash
-git clone https://github.com/Snapyou2/re-command.git
-cd re-command/docker
+wget https://raw.githubusercontent.com/Snapyou2/re-command/refs/heads/main/docker/docker-compose.yml
+
 ```
 
-Edit `.env` and set at least `MUSIC_PATH` to your Navidrome music library path.
+Edit the file and set at least the volumes to your Navidrome music library path. Replace the whole "{MUSIC_PATH:-../music}" with the full library path.
+It should look like this:
+```
+    volumes:
+      - /home/snapyou2/Music:/app/music
+      - /home/snapyou2/Music/.tempfolder:/app/temp_downloads
+```
 
 ### 2. Start the Application
 
@@ -56,42 +67,7 @@ docker compose up -d
 
 ### 3. Access the Web Interface
 
-Open `http://localhost:5000` in your browser. Configure Navidrome access, playlist providers, and Deezer ARL in the settings.
-
-### 4. Create a Dynamic Playlist
-
-In Navidrome, create a playlist with filters: *Comment contains lb_recommendation* OR *Comment contains lastfm_recommendation* OR *Comment contains llm_recommendation*. Optionally add *Rating > 1*.
-
-## Alternative: Quick Start with Docker (Script)
-
-### Prerequisites
-
-- [Docker](https://www.docker.com/get-started) installed
-- A running [Navidrome](https://www.navidrome.org/) instance
-- [Deezer](https://www.deezer.com/) account with ARL token
-- A [ListenBrainz](https://listenbrainz.org/) and/or [Last.fm](https://www.last.fm/) account (I recommend both !)
-
-### 1. Run the Container
-
-Enter the repo:
-```bash
-cd re-command
-```
-Start the script with the minimal setup and do the configuration later in the web interface:
-```bash
-chmod +X docker/run-re-command.sh
-sh docker/run-re-command.sh --min-setup
-```
-This will start the container, you will just need to enter your navidrome music folder path.
-
-If you are fine with a lot of CLI copy-pasting, you can also run the same commands without the --min-setup flag.
-
-### 2. Access the Web Interface
-
-Open your browser and go to `http://localhost:5000` to access the web interface. Use the settings menu to provide access to your navidrome instance, set up your playlist providers and add a deezer arl for downloads.
-
-### 3. Create a Dynamic Playlist
-In your music player, create a playlist that includes *Comment is lb_recommendation* AND *Comment is lastfm_recommendation* AND *Comment is llm_recommendation*. Or do a separate playlist for each. Adding another filter *Rating > 1* is quite convenient as well to avoid seeing the tracks you don't like.
+Open `http://localhost:5000` in your browser. Configure Navidrome access, playlist providers, and Deezer ARL in the settings. You can also click the "Create Smart Playlists" after you configured everything and then trigger a rescan of your Navidrome library.
 
 ## Screenshots
 
@@ -146,7 +122,7 @@ Download music from any supported platform:
 Via web interface:
 - Preview tracks before downloading (30-second previews)
 - Download individual tracks from recommendations
-- Submit manual feedback (like/dislike) to the playlist provider
+- Submit manual like/dislike feedback to the playlist provider (defaults to ListenBrainz for LLM playlists)
 
 ### 5. Library Maintenance
 
@@ -226,23 +202,24 @@ Then open `http://localhost:5000` in your browser.
 
 ### Environment Variables (Docker)
 
-| Variable | Description | Required | Default |
-|----------|-------------|----------|---------|
-| `RECOMMAND_ROOT_ND` | Navidrome server URL | Yes | - |
-| `RECOMMAND_USER_ND` | Navidrome username | Yes | - |
-| `RECOMMAND_PASSWORD_ND` | Navidrome password | Yes | - |
-| `RECOMMAND_DEEZER_ARL` | Deezer ARL token | Yes | - |
-| `RECOMMAND_LISTENBRAINZ_ENABLED` | Enable ListenBrainz | No | `false` |
-| `RECOMMAND_TOKEN_LB` | ListenBrainz API token | No | - |
-| `RECOMMAND_USER_LB` | ListenBrainz username | No | - |
-| `RECOMMAND_LASTFM_ENABLED` | Enable Last.fm | No | `false` |
-| `RECOMMAND_LASTFM_API_KEY` | Last.fm API key | No | - |
-| `RECOMMAND_LASTFM_API_SECRET` | Last.fm API secret | No | - |
-| `RECOMMAND_LASTFM_USERNAME` | Last.fm username | No | - |
-| `RECOMMAND_LLM_ENABLED` | Enable LLM suggestions | No | `false` |
-| `RECOMMAND_LLM_PROVIDER` | LLM provider (gemini/openrouter) | No | `gemini` |
-| `RECOMMAND_LLM_API_KEY` | LLM API key | No | - |
-| `RECOMMAND_LLM_MODEL_NAME` | LLM model name (optional) | No | - |
+| Variable | Description |
+|----------|-------------|
+| `RECOMMAND_ROOT_ND` | Navidrome server URL |
+| `RECOMMAND_USER_ND` | Navidrome username |
+| `RECOMMAND_PASSWORD_ND` | Navidrome password |
+| `RECOMMAND_DEEZER_ARL` | Deezer ARL token |
+| `RECOMMAND_LISTENBRAINZ_ENABLED` | Enable ListenBrainz |
+| `RECOMMAND_TOKEN_LB` | ListenBrainz API token |
+| `RECOMMAND_USER_LB` | ListenBrainz username |
+| `RECOMMAND_LASTFM_ENABLED` | Enable Last.fm |
+| `RECOMMAND_LASTFM_USERNAME` | Last.fm username |
+| `RECOMMAND_LASTFM_PASSWORD` | Last.fm password |
+| `RECOMMAND_LASTFM_API_KEY` | Last.fm API key |
+| `RECOMMAND_LASTFM_API_SECRET` | Last.fm API secret |
+| `RECOMMAND_LLM_ENABLED` | Enable LLM suggestions |
+| `RECOMMAND_LLM_PROVIDER` | LLM provider (gemini/openrouter/llama) |
+| `RECOMMAND_LLM_API_KEY` | LLM API key |
+| `RECOMMAND_LLM_MODEL_NAME` | LLM model name |
 
 ### Configuration File (Local)
 
@@ -275,7 +252,7 @@ The web interface exposes RESTful APIs:
 
 ## LLM Model Comparison
 
-re-command supports various Large Language Models for music recommendations. From experience, gemini-2.5-flash remains the best available free model for recommendations. Here is a performance comparison of free OpenRouter models I tested for music discovery:
+re-command supports various Large Language Models for music recommendations. From experience, gemini-2.5-flash remains the best available free model amongst external APIs recommendations options. Here is a performance comparison of free OpenRouter models I tested for music discovery:
 
 ### Best to Worst Performance:
 
