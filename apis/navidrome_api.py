@@ -364,7 +364,9 @@ class NavidromeAPI:
 
             
             if has_recommendation_comment and song_path:
-                user_rating = song_details.get('userRating', 0)
+                # First check if the song was starred, if so treat it as 5 star rating
+                starred = song_details.get("starred")
+                user_rating = 5 if starred else song_details.get('userRating', 0)
                 
                 # ListenBrainz recommendations
                 if song_comment == self.target_comment and self.listenbrainz_enabled:
