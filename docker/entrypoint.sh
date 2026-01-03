@@ -84,7 +84,7 @@ echo "" >> config.py
 mkdir -p /app/logs
 touch /app/logs/re-command.log
 # Run cleanup first, then recommendations
-echo "0 0 * * 2 root /usr/local/bin/python3 /app/re-command.py --cleanup >> /app/logs/re-command.log 2>&1 && /usr/local/bin/python3 /app/re-command.py >> /app/logs/re-command.log 2>&1" > /etc/cron.d/re-command-cron
+echo "0 0 * * 2 root /usr/local/bin/python3 /app/re-command.py >> /proc/1/fd/1 2>&1" > /etc/cron.d/re-command-cron
 chmod 0644 /etc/cron.d/re-command-cron
 
 # Replace ARL placeholder in streamrip_config.toml

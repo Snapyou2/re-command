@@ -5,8 +5,8 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - ${MUSIC_PATH:-/home/snap/Music}:/app/music
-      - ${MUSIC_PATH:-/home/snap/Music}/.tempfolder:/app/temp_downloads
+      - ${MUSIC_PATH:-/home/user/Music}:/app/music
+      - ${MUSIC_PATH:-/home/user/Music}/.tempfolder:/app/temp_downloads
     environment:
       # Navidrome Configuration (empty defaults, configure via web UI)
       - RECOMMAND_ROOT_ND=${RECOMMAND_ROOT_ND:-}
