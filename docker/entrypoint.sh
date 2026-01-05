@@ -79,6 +79,10 @@ echo "" >> config.py
 echo "DEEZER_MAX_CONCURRENT_REQUESTS = int(os.getenv(\"DEEZER_MAX_CONCURRENT_REQUESTS\", \"${RECOMMAND_DEEZER_MAX_CONCURRENT_REQUESTS:-3}\"))" >> config.py
 echo "" >> config.py
 
+# Duplicate files handling
+echo "KEEP_DUPLICATE_FILES = os.getenv(\"KEEP_DUPLICATE_FILES\", \"${RECOMMAND_KEEP_DUPLICATE_FILES:-true}\").lower() == \"true\"" >> config.py
+echo "" >> config.py
+
 # Set up cron job
 # Run every Tuesday at 00:00 (Usually guarantees that the LB playlist is released)
 mkdir -p /app/logs

@@ -51,6 +51,9 @@ services:
       - RECOMMAND_FRESH_RELEASES_CACHE_DURATION=${RECOMMAND_FRESH_RELEASES_CACHE_DURATION:-300}
       - RECOMMAND_DEEZER_MAX_CONCURRENT_REQUESTS=${RECOMMAND_DEEZER_MAX_CONCURRENT_REQUESTS:-3}
 
+      # Duplicate file handling
+      - RECOMMAND_KEEP_DUPLICATE_FILES=${RECOMMAND_KEEP_DUPLICATE_FILES:-true}
+
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"

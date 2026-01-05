@@ -58,3 +58,6 @@ FRESH_RELEASES_CACHE_DURATION = 300
 
 # Deezer API Rate Limiting
 DEEZER_MAX_CONCURRENT_REQUESTS = 3
+
+# Duplicate file handling
+KEEP_DUPLICATE_FILES = os.getenv('RECOMMAND_KEEP_DUPLICATE_FILES', 'false').lower() == 'true'
