@@ -77,6 +77,38 @@ class NavidromeAPI:
             print(f"Error fetching song details from Navidrome: {data.get('subsonic-response', {}).get('status', 'Unknown')}")
             return None
 
+    def _song_exists(self, artist, album, title):
+        """
+        Check if a song exists with the same artist, album and title (case-insensitive).
+        Returns True if found, otherwise False.
+        """
+        salt, token = self._get_navidrome_auth_params()
+        url = f"{self.root_nd}/rest/search3.view"
+        query = f"{artist} {album} {title}"
+        params = {
+            'u': self.user_nd,
+            't': token,
+            's': salt,
+            'v': '1.16.1',
+            'c': 'python-script',
+            'f': 'json',
+            'query': query,
+            'songCount': 50
+        }
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+        data = response.json()
+        songs = []
+        if data['subsonic-response']['status'] == 'ok' and 'searchResult3' in data['subsonic-response']:
+            songs = data['subsonic-response']['searchResult3'].get('song', [])
+        for song in songs:
+            song_artist = song.get('artist', '').strip().lower()
+            song_album = song.get('album', '').strip().lower()
+            song_title = song.get('title', '').strip().lower()
+            if song_artist == artist.strip().lower() and song_album == album.strip().lower() and song_title == title.strip().lower():
+                return True
+        return False
+
     def _update_song_comment(self, file_path, new_comment):
         """Updates the comment of a song using Mutagen."""
         try:
@@ -588,6 +620,15 @@ class NavidromeAPI:
                             artist = "Unknown Artist"
                             album = "Unknown Album"
                             title = os.path.splitext(filename)[0]
+
+                        # Check if same song already exists in Navidrome and remove duplicate
+                        if self._song_exists(artist, album, title):
+                            try:
+                                os.remove(file_path)
+                                print(f"Track already exists in Navidrome: {artist} - {album} - {title}. Duplicate removed.")
+                            except Exception as e:
+                                print(f"Error removing duplicate '{filename}': {e}")
+                            continue
 
                         artist = sanitize_filename(artist)
                         album = sanitize_filename(album)
