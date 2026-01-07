@@ -621,14 +621,17 @@ class NavidromeAPI:
                             album = "Unknown Album"
                             title = os.path.splitext(filename)[0]
 
-                        # Check if same song already exists in Navidrome and remove duplicate
-                        if self._song_exists(artist, album, title):
-                            try:
-                                os.remove(file_path)
-                                print(f"Track already exists in Navidrome: {artist} - {album} - {title}. Duplicate removed.")
-                            except Exception as e:
-                                print(f"Error removing duplicate '{filename}': {e}")
-                            continue
+                        # Check if same song already exists in Navidrome
+                        try:
+                            if self._song_exists(artist, album, title):
+                                try:
+                                    os.remove(file_path)
+                                    print(f"Track already exists in Navidrome: {artist} - {album} - {title}. Duplicate removed.")
+                                except Exception as e:
+                                    print(f"Error removing duplicate '{filename}': {e}")
+                                continue
+                        except requests.exceptions.RequestException as e:
+                            print(f"Error connecting to Navidrome while checking for duplicate '{artist} - {album} - {title}': {e}")
 
                         artist = sanitize_filename(artist)
                         album = sanitize_filename(album)
