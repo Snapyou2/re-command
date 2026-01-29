@@ -4,6 +4,8 @@ import os
 import sys
 import shutil
 import asyncio
+import json
+import time
 from tqdm import tqdm
 from config import TEMP_DOWNLOAD_FOLDER
 from mutagen import File, MutagenError
@@ -501,6 +503,491 @@ class NavidromeAPI:
         remove_empty_folders(self.music_library_path)
         print("Empty folder removal completed.")
 
+
+    # ---- Subsonic API Playlist Methods (for API playlist mode) ----
+
+    def _search_song_in_navidrome(self, artist, title, salt, token):
+        """Search for a song in Navidrome by artist and title. Returns song dict or None."""
+        url = f"{self.root_nd}/rest/search3.view"
+        params = {
+            'u': self.user_nd,
+            't': token,
+            's': salt,
+            'v': '1.16.1',
+            'c': 'python-script',
+            'f': 'json',
+            'query': f"{artist} {title}",
+            'songCount': 20,
+            'artistCount': 0,
+            'albumCount': 0
+        }
+        try:
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+            songs = data.get('subsonic-response', {}).get('searchResult3', {}).get('song', [])
+            # Try exact match first
+            for song in songs:
+                if (song.get('artist', '').lower() == artist.lower() and
+                        song.get('title', '').lower() == title.lower()):
+                    return song
+            # Fallback: return first result if any
+            return songs[0] if songs else None
+        except Exception as e:
+            print(f"Error searching Navidrome for '{artist} - {title}': {e}")
+            return None
+
+    def _get_playlists(self, salt, token):
+        """Get all playlists from Navidrome."""
+        url = f"{self.root_nd}/rest/getPlaylists.view"
+        params = {
+            'u': self.user_nd,
+            't': token,
+            's': salt,
+            'v': '1.16.1',
+            'c': 'python-script',
+            'f': 'json'
+        }
+        try:
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+            playlists = data.get('subsonic-response', {}).get('playlists', {}).get('playlist', [])
+            return playlists
+        except Exception as e:
+            print(f"Error fetching playlists from Navidrome: {e}")
+            return []
+
+    def _find_playlist_by_name(self, name, salt, token):
+        """Find a playlist by name. Returns playlist dict or None."""
+        playlists = self._get_playlists(salt, token)
+        for pl in playlists:
+            if pl.get('name') == name:
+                return pl
+        return None
+
+    def _create_playlist(self, name, song_ids, salt, token):
+        """Create a new playlist with the given song IDs."""
+        url = f"{self.root_nd}/rest/createPlaylist.view"
+        params = {
+            'u': self.user_nd,
+            't': token,
+            's': salt,
+            'v': '1.16.1',
+            'c': 'python-script',
+            'f': 'json',
+            'name': name
+        }
+        # Add song IDs as repeated params
+        param_list = [(k, v) for k, v in params.items()]
+        for sid in song_ids:
+            param_list.append(('songId', sid))
+        try:
+            response = requests.get(url, params=param_list)
+            response.raise_for_status()
+            data = response.json()
+            if data.get('subsonic-response', {}).get('status') == 'ok':
+                print(f"Created playlist '{name}' with {len(song_ids)} tracks.")
+                return True
+            else:
+                print(f"Error creating playlist '{name}': {data}")
+                return False
+        except Exception as e:
+            print(f"Error creating playlist '{name}': {e}")
+            return False
+
+    def _update_playlist(self, playlist_id, song_ids, salt, token):
+        """Replace the contents of an existing playlist with the given song IDs.
+        Uses createPlaylist with playlistId to overwrite."""
+        url = f"{self.root_nd}/rest/createPlaylist.view"
+        params = {
+            'u': self.user_nd,
+            't': token,
+            's': salt,
+            'v': '1.16.1',
+            'c': 'python-script',
+            'f': 'json',
+            'playlistId': playlist_id
+        }
+        param_list = [(k, v) for k, v in params.items()]
+        for sid in song_ids:
+            param_list.append(('songId', sid))
+        try:
+            response = requests.get(url, params=param_list)
+            response.raise_for_status()
+            data = response.json()
+            if data.get('subsonic-response', {}).get('status') == 'ok':
+                print(f"Updated playlist (id={playlist_id}) with {len(song_ids)} tracks.")
+                return True
+            else:
+                print(f"Error updating playlist (id={playlist_id}): {data}")
+                return False
+        except Exception as e:
+            print(f"Error updating playlist (id={playlist_id}): {e}")
+            return False
+
+    def _start_scan(self, salt, token):
+        """Trigger a Navidrome library scan via the Subsonic API."""
+        url = f"{self.root_nd}/rest/startScan.view"
+        params = {
+            'u': self.user_nd,
+            't': token,
+            's': salt,
+            'v': '1.16.1',
+            'c': 'python-script',
+            'f': 'json'
+        }
+        try:
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+            if data.get('subsonic-response', {}).get('status') == 'ok':
+                print("Library scan triggered successfully.")
+                return True
+            else:
+                print(f"Error triggering scan: {data}")
+                return False
+        except Exception as e:
+            print(f"Error triggering library scan: {e}")
+            return False
+
+    def _get_scan_status(self, salt, token):
+        """Check if a library scan is in progress."""
+        url = f"{self.root_nd}/rest/getScanStatus.view"
+        params = {
+            'u': self.user_nd,
+            't': token,
+            's': salt,
+            'v': '1.16.1',
+            'c': 'python-script',
+            'f': 'json'
+        }
+        try:
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+            scan_status = data.get('subsonic-response', {}).get('scanStatus', {})
+            return scan_status.get('scanning', False)
+        except Exception as e:
+            print(f"Error checking scan status: {e}")
+            return False
+
+    def _wait_for_scan(self, salt, token, timeout=120):
+        """Wait for an ongoing library scan to complete."""
+        start = time.time()
+        while time.time() - start < timeout:
+            if not self._get_scan_status(salt, token):
+                print("Library scan completed.")
+                return True
+            time.sleep(3)
+        print(f"Scan did not complete within {timeout}s timeout.")
+        return False
+
+    def _remove_from_playlist(self, playlist_id, song_index, salt, token):
+        """Remove a song from a playlist by its index."""
+        url = f"{self.root_nd}/rest/updatePlaylist.view"
+        params = {
+            'u': self.user_nd,
+            't': token,
+            's': salt,
+            'v': '1.16.1',
+            'c': 'python-script',
+            'f': 'json',
+            'playlistId': playlist_id,
+            'songIndexToRemove': song_index
+        }
+        try:
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            return True
+        except Exception as e:
+            print(f"Error removing song at index {song_index} from playlist {playlist_id}: {e}")
+            return False
+
+    def _get_playlist_songs(self, playlist_id, salt, token):
+        """Get all songs in a playlist."""
+        url = f"{self.root_nd}/rest/getPlaylist.view"
+        params = {
+            'u': self.user_nd,
+            't': token,
+            's': salt,
+            'v': '1.16.1',
+            'c': 'python-script',
+            'f': 'json',
+            'id': playlist_id
+        }
+        try:
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+            playlist = data.get('subsonic-response', {}).get('playlist', {})
+            return playlist.get('entry', [])
+        except Exception as e:
+            print(f"Error fetching playlist songs for {playlist_id}: {e}")
+            return []
+
+    # ---- Download History JSON Management ----
+
+    @staticmethod
+    def _load_download_history(history_path):
+        """Load the download history JSON. Returns a dict keyed by source name,
+        each value is a list of track entries."""
+        if os.path.exists(history_path):
+            try:
+                with open(history_path, 'r') as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"Error loading download history: {e}")
+        return {}
+
+    @staticmethod
+    def _save_download_history(history_path, history):
+        """Save the download history JSON."""
+        try:
+            os.makedirs(os.path.dirname(history_path) if os.path.dirname(history_path) else '.', exist_ok=True)
+            with open(history_path, 'w') as f:
+                json.dump(history, f, indent=2)
+        except IOError as e:
+            print(f"Error saving download history: {e}")
+
+    def add_to_download_history(self, history_path, source_name, track_entry):
+        """Add a track entry to the download history for a given source.
+        track_entry should be a dict with at least: artist, title, album, file_path"""
+        history = self._load_download_history(history_path)
+        if source_name not in history:
+            history[source_name] = []
+        # Avoid duplicates
+        for existing in history[source_name]:
+            if (existing.get('artist', '').lower() == track_entry.get('artist', '').lower() and
+                    existing.get('title', '').lower() == track_entry.get('title', '').lower()):
+                # Update file_path if changed
+                existing['file_path'] = track_entry.get('file_path', existing.get('file_path'))
+                self._save_download_history(history_path, history)
+                return
+        history[source_name].append(track_entry)
+        self._save_download_history(history_path, history)
+
+    def remove_from_download_history(self, history_path, source_name, artist, title):
+        """Remove a track from the download history."""
+        history = self._load_download_history(history_path)
+        if source_name not in history:
+            return
+        history[source_name] = [
+            t for t in history[source_name]
+            if not (t.get('artist', '').lower() == artist.lower() and
+                    t.get('title', '').lower() == title.lower())
+        ]
+        self._save_download_history(history_path, history)
+
+    # ---- API Playlist Mode: Update playlists after download ----
+
+    def update_api_playlists(self, downloaded_songs_info, history_path):
+        """After downloading, update Navidrome API playlists for each source.
+        - Triggers a scan so new files get IDs
+        - Groups tracks by source
+        - For each source, finds/creates a playlist and sets its contents
+        """
+        salt, token = self._get_navidrome_auth_params()
+
+        # Trigger scan and wait
+        print("Triggering library scan for newly downloaded files...")
+        self._start_scan(salt, token)
+        self._wait_for_scan(salt, token)
+
+        # Group songs by source
+        source_map = {
+            'listenbrainz': 'ListenBrainz Recommendations',
+            'last.fm': 'Last.fm Recommendations',
+            'llm': 'LLM Recommendations',
+        }
+
+        tracks_by_source = {}
+        for song in downloaded_songs_info:
+            src = song.get('source', 'Unknown').lower()
+            playlist_name = source_map.get(src, f"{song.get('source', 'Unknown')} Recommendations")
+            if playlist_name not in tracks_by_source:
+                tracks_by_source[playlist_name] = []
+            tracks_by_source[playlist_name].append(song)
+
+        history = self._load_download_history(history_path)
+
+        for playlist_name, songs in tracks_by_source.items():
+            print(f"\n--- Updating API playlist: {playlist_name} ---")
+            song_ids = []
+            for song in songs:
+                nd_song = self._search_song_in_navidrome(song['artist'], song['title'], salt, token)
+                if nd_song:
+                    song_ids.append(nd_song['id'])
+                    # Record in download history
+                    source_key = song.get('source', 'Unknown')
+                    self.add_to_download_history(history_path, source_key, {
+                        'artist': song['artist'],
+                        'title': song['title'],
+                        'album': song.get('album', ''),
+                        'navidrome_id': nd_song['id'],
+                        'file_path': nd_song.get('path', ''),
+                        'recording_mbid': song.get('recording_mbid', ''),
+                        'downloaded_at': time.strftime('%Y-%m-%dT%H:%M:%S')
+                    })
+                else:
+                    print(f"  Could not find '{song['artist']} - {song['title']}' in Navidrome after scan.")
+
+            if not song_ids:
+                print(f"  No tracks found in Navidrome for playlist '{playlist_name}'. Skipping.")
+                continue
+
+            # Find or create playlist
+            existing = self._find_playlist_by_name(playlist_name, salt, token)
+            if existing:
+                self._update_playlist(existing['id'], song_ids, salt, token)
+            else:
+                self._create_playlist(playlist_name, song_ids, salt, token)
+
+    # ---- API Playlist Mode: Cleanup ----
+
+    async def process_api_cleanup(self, history_path, listenbrainz_api=None, lastfm_api=None):
+        """Cleanup routine for API playlist mode.
+        Iterates through the download history JSON, checks ratings, and:
+        - High rated (4-5 stars) / starred: remove from history (keep file permanently)
+        - Low rated (1-3 stars) / unrated: delete file, remove from playlist, remove from history
+        """
+        salt, token = self._get_navidrome_auth_params()
+        history = self._load_download_history(history_path)
+
+        if not history:
+            print("No download history found. Nothing to clean up in API mode.")
+            return
+
+        deleted_songs = []
+        kept_songs = []
+
+        source_map_reverse = {
+            'ListenBrainz': self.target_comment,
+            'Last.fm': self.lastfm_target_comment,
+            'LLM': self.llm_target_comment,
+        }
+
+        playlist_name_map = {
+            'ListenBrainz': 'ListenBrainz Recommendations',
+            'Last.fm': 'Last.fm Recommendations',
+            'LLM': 'LLM Recommendations',
+        }
+
+        for source_name in list(history.keys()):
+            tracks = history.get(source_name, [])
+            if not tracks:
+                continue
+
+            print(f"\n--- API Cleanup for source: {source_name} ({len(tracks)} tracked downloads) ---")
+
+            playlist_name = playlist_name_map.get(source_name, f"{source_name} Recommendations")
+            existing_playlist = self._find_playlist_by_name(playlist_name, salt, token)
+            playlist_songs = []
+            if existing_playlist:
+                playlist_songs = self._get_playlist_songs(existing_playlist['id'], salt, token)
+
+            tracks_to_remove = []
+            tracks_to_keep_ids = []  # IDs to keep in playlist
+
+            for track in tracks:
+                artist = track.get('artist', '')
+                title = track.get('title', '')
+                nd_id = track.get('navidrome_id', '')
+                file_rel_path = track.get('file_path', '')
+
+                # Get song details from Navidrome for rating
+                song_details = None
+                if nd_id:
+                    song_details = self._get_song_details(nd_id, salt, token)
+
+                if song_details is None:
+                    # Song might have been deleted externally, remove from history
+                    print(f"  Song not found in Navidrome: {artist} - {title}. Removing from history.")
+                    tracks_to_remove.append(track)
+                    continue
+
+                starred = song_details.get("starred")
+                user_rating = 5 if starred else song_details.get('userRating', 0)
+
+                if user_rating >= 4:
+                    # Keep the file, remove from download history (it's now a permanent library file)
+                    print(f"  KEEP (rating={user_rating}): {artist} - {title}")
+                    kept_songs.append(f"{artist} - {title} (rating={user_rating})")
+                    tracks_to_remove.append(track)
+
+                    # Submit feedback for high-rated tracks
+                    if source_name == 'ListenBrainz' and self.listenbrainz_enabled and user_rating == 5:
+                        mbid = track.get('recording_mbid', '') or song_details.get('musicBrainzId', '')
+                        if mbid and listenbrainz_api:
+                            await listenbrainz_api.submit_feedback(mbid, 1)
+                    elif source_name == 'Last.fm' and self.lastfm_enabled and user_rating == 5:
+                        if lastfm_api:
+                            try:
+                                await asyncio.to_thread(lastfm_api.love_track, title, artist)
+                            except Exception as e:
+                                print(f"  Error submitting Last.fm love: {e}")
+
+                    # Keep in playlist
+                    if nd_id:
+                        tracks_to_keep_ids.append(nd_id)
+                else:
+                    # Delete the file
+                    file_path = self._find_actual_song_path(file_rel_path, song_details)
+                    if file_path and os.path.exists(file_path):
+                        if self._delete_song(file_path):
+                            deleted_songs.append(f"{artist} - {title}")
+                    else:
+                        print(f"  File not found for deletion: {artist} - {title}")
+                        deleted_songs.append(f"{artist} - {title} (file not found)")
+
+                    tracks_to_remove.append(track)
+
+                    # Submit negative feedback for 1-star
+                    if user_rating == 1:
+                        if source_name == 'ListenBrainz' and self.listenbrainz_enabled:
+                            mbid = track.get('recording_mbid', '') or song_details.get('musicBrainzId', '')
+                            if mbid and listenbrainz_api:
+                                await listenbrainz_api.submit_feedback(mbid, -1)
+
+            # Remove processed tracks from history
+            for track in tracks_to_remove:
+                self.remove_from_download_history(history_path, source_name, track.get('artist', ''), track.get('title', ''))
+
+            # Update the playlist to remove deleted songs (keep only high-rated ones
+            # and any pre-existing library songs that the user manually added)
+            # We rebuild with only the kept IDs from our tracked downloads
+            # Note: we don't touch songs in the playlist that aren't in our history
+            if existing_playlist and playlist_songs:
+                # Get the set of tracked IDs we processed
+                processed_ids = {t.get('navidrome_id', '') for t in tracks}
+                # Keep songs that are either: not tracked by us, or explicitly kept
+                new_song_ids = []
+                for ps in playlist_songs:
+                    ps_id = ps.get('id', '')
+                    if ps_id not in processed_ids:
+                        # Not tracked by us - keep it (pre-existing library song)
+                        new_song_ids.append(ps_id)
+                    elif ps_id in tracks_to_keep_ids:
+                        # Tracked and high-rated - keep it
+                        new_song_ids.append(ps_id)
+                    # else: tracked and low-rated - remove from playlist
+
+                self._update_playlist(existing_playlist['id'], new_song_ids, salt, token)
+
+        if deleted_songs:
+            print("\nDeleted the following songs during API cleanup:")
+            for s in deleted_songs:
+                print(f"  - {s}")
+        if kept_songs:
+            print("\nKept the following songs (removed from tracking, now permanent):")
+            for s in kept_songs:
+                print(f"  - {s}")
+
+        # Remove empty folders
+        print("Removing empty folders from music library...")
+        from utils import remove_empty_folders
+        remove_empty_folders(self.music_library_path)
+        print("Empty folder removal completed.")
 
     def organize_music_files(self, source_folder, destination_base_folder):
         """

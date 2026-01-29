@@ -44,6 +44,11 @@ echo "LLM_BASE_URL = os.getenv(\"LLM_BASE_URL\", \"${RECOMMAND_LLM_BASE_URL:-}\"
 echo "LLM_TARGET_COMMENT = os.getenv(\"LLM_TARGET_COMMENT\", \"${RECOMMAND_LLM_TARGET_COMMENT:-llm_recommendation}\")" >> config.py
 echo "" >> config.py
 
+# Playlist Mode
+echo "PLAYLIST_MODE = os.getenv(\"PLAYLIST_MODE\", \"${RECOMMAND_PLAYLIST_MODE:-tags}\")" >> config.py
+echo "DOWNLOAD_HISTORY_PATH = os.getenv(\"DOWNLOAD_HISTORY_PATH\", \"${RECOMMAND_DOWNLOAD_HISTORY_PATH:-/app/download_history.json}\")" >> config.py
+echo "" >> config.py
+
 # Deezer Configuration (Optional - can be configured via web UI)
 echo "DEEZER_ARL = os.getenv(\"DEEZER_ARL\", \"${RECOMMAND_DEEZER_ARL:-}\")" >> config.py
 echo "" >> config.py

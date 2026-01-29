@@ -318,7 +318,8 @@ def get_config():
         "LLM_API_KEY": "••••••••" if LLM_API_KEY else "",
         "LLM_MODEL_NAME": globals().get("LLM_MODEL_NAME", ""),
         "LLM_BASE_URL": globals().get("LLM_BASE_URL", ""),
-        "CRON_SCHEDULE": get_current_cron_schedule()
+        "CRON_SCHEDULE": get_current_cron_schedule(),
+        "PLAYLIST_MODE": globals().get("PLAYLIST_MODE", "tags")
     })
 
 @app.route('/api/update_arl', methods=['POST'])
@@ -387,7 +388,7 @@ def update_config():
             if key in {'LISTENBRAINZ_ENABLED', 'LASTFM_ENABLED', 'ALBUM_RECOMMENDATION_ENABLED', 'HIDE_DOWNLOAD_FROM_LINK', 'HIDE_FRESH_RELEASES', 'LLM_ENABLED'}:
                 # Ensure boolean values are written as True/False (Python literal)
                 new_value_str_for_file = str(value) 
-            elif key in ('DOWNLOAD_METHOD', 'LLM_PROVIDER'):
+            elif key in ('DOWNLOAD_METHOD', 'LLM_PROVIDER', 'PLAYLIST_MODE'):
                 new_value_str_for_file = f'"{value}"'
             else:
                 # For other string values, ensure they are quoted
@@ -569,8 +570,16 @@ def trigger_navidrome_cleanup():
         lastfm_api = LastFmAPI(LASTFM_API_KEY, LASTFM_API_SECRET, LASTFM_USERNAME, LASTFM_PASSWORD, LASTFM_SESSION_KEY, LASTFM_ENABLED)
 
         import asyncio
-        # Use the global navidrome_api_global instance
-        asyncio.run(navidrome_api_global.process_navidrome_library(listenbrainz_api=listenbrainz_api, lastfm_api=lastfm_api))
+        playlist_mode = globals().get('PLAYLIST_MODE', 'tags')
+        if playlist_mode == 'api':
+            download_history_path = globals().get('DOWNLOAD_HISTORY_PATH', '/app/download_history.json')
+            asyncio.run(navidrome_api_global.process_api_cleanup(
+                history_path=download_history_path,
+                listenbrainz_api=listenbrainz_api,
+                lastfm_api=lastfm_api
+            ))
+        else:
+            asyncio.run(navidrome_api_global.process_navidrome_library(listenbrainz_api=listenbrainz_api, lastfm_api=lastfm_api))
         return jsonify({"status": "success", "message": "Navidrome cleanup completed successfully."})
     except Exception as e:
         print(f"Error triggering Navidrome cleanup: {e}")

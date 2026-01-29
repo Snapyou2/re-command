@@ -50,6 +50,12 @@ LASTFM_TARGET_COMMENT = "lastfm_recommendation"
 ALBUM_RECOMMENDATION_COMMENT = "album_recommendation"
 LLM_TARGET_COMMENT = 'llm_recommendation'
 
+# Playlist Mode: "tags" (legacy smart playlists via metadata) or "api" (Navidrome API playlists)
+PLAYLIST_MODE = "tags"
+
+# Download History JSON path (used in API playlist mode to track downloaded files)
+DOWNLOAD_HISTORY_PATH = "/app/download_history.json"
+
 # History Tracking
 PLAYLIST_HISTORY_FILE = "playlist_history.txt"
 

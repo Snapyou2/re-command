@@ -20,6 +20,7 @@ from utils import remove_empty_folders, Tagger
 async def process_navidrome_cleanup():
     """
     Processes Navidrome library for cleanup based on ratings and submits feedback.
+    Uses tag-based or API-based cleanup depending on PLAYLIST_MODE.
     """
     print("Starting Navidrome cleanup and feedback submission...")
 
@@ -45,11 +46,21 @@ async def process_navidrome_cleanup():
         target_comment=TARGET_COMMENT,
         lastfm_target_comment=LASTFM_TARGET_COMMENT
     )
-    
-    await navidrome_api.process_navidrome_library(
-        listenbrainz_api=listenbrainz_api,
-        lastfm_api=lastfm_api
-    )
+
+    playlist_mode = globals().get('PLAYLIST_MODE', 'tags')
+    if playlist_mode == 'api':
+        print("[API mode] Running API-based cleanup using download history...")
+        download_history_path = globals().get('DOWNLOAD_HISTORY_PATH', '/app/download_history.json')
+        await navidrome_api.process_api_cleanup(
+            history_path=download_history_path,
+            listenbrainz_api=listenbrainz_api,
+            lastfm_api=lastfm_api
+        )
+    else:
+        await navidrome_api.process_navidrome_library(
+            listenbrainz_api=listenbrainz_api,
+            lastfm_api=lastfm_api
+        )
 
     print("Navidrome cleanup and feedback submission finished.")
 
@@ -215,6 +226,13 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
                 TEMP_DOWNLOAD_FOLDER,
                 MUSIC_LIBRARY_PATH
             )
+
+            # In API playlist mode, update Navidrome playlists
+            playlist_mode = globals().get('PLAYLIST_MODE', 'tags')
+            if playlist_mode == 'api':
+                print("\n[API mode] Updating Navidrome API playlists...")
+                download_history_path = globals().get('DOWNLOAD_HISTORY_PATH', '/app/download_history.json')
+                navidrome_api.update_api_playlists(downloaded_songs_info, download_history_path)
         else:
             print("\nNo new songs were downloaded.")
     else:

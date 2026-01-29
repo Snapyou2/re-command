@@ -62,20 +62,25 @@ class TrackDownloader:
             return None
 
         if downloaded_file_path:
-            self.tagger.tag_track(
-                downloaded_file_path,
-                song_info['artist'],
-                song_info['title'],
-                song_info['album'],
-                song_info['release_date'],
-                song_info['recording_mbid'],
-                song_info['source'],
-                song_info.get('album_art')
-            )
-            self.tagger.add_comment_to_file(
-                downloaded_file_path,
-                comment
-            )
+            # In API playlist mode, skip metadata/comment tagging entirely
+            playlist_mode = getattr(config, 'PLAYLIST_MODE', 'tags')
+            if playlist_mode == 'api':
+                print(f"  [API mode] Skipping tagging for {song_info['artist']} - {song_info['title']}")
+            else:
+                self.tagger.tag_track(
+                    downloaded_file_path,
+                    song_info['artist'],
+                    song_info['title'],
+                    song_info['album'],
+                    song_info['release_date'],
+                    song_info['recording_mbid'],
+                    song_info['source'],
+                    song_info.get('album_art')
+                )
+                self.tagger.add_comment_to_file(
+                    downloaded_file_path,
+                    comment
+                )
             return downloaded_file_path
         else:
             print(f"  ❌ Failed to download: {song_info['artist']} - {song_info['title']}")
