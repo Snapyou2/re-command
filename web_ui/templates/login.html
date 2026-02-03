@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrackDrop - Login</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#4142e0">
+    <link rel="icon" href="/favicon.ico">
+    <style>
+        :root {
+            --primary-color: #4142e0;
+            --secondary-color: #3fbbda;
+            --background-color: #1a1a2e;
+            --card-background: #2e2e4a;
+            --text-color: #e0e0e0;
+            --border-color: #4a4a6a;
+            --error-color: #dc3545;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .login-card {
+            background-color: var(--card-background);
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+        .login-card img {
+            width: 100px;
+            margin-bottom: 20px;
+            filter: drop-shadow(0 0 5px rgba(0,0,0,0.3));
+        }
+        .login-card h1 {
+            color: var(--primary-color);
+            margin-bottom: 8px;
+            font-size: 1.8em;
+        }
+        .login-card p {
+            color: #b0b0b0;
+            margin-bottom: 24px;
+            font-size: 0.9em;
+        }
+        .form-group {
+            margin-bottom: 16px;
+            text-align: left;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 600;
+            font-size: 0.9em;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 1em;
+            background-color: #3a3a5a;
+            color: var(--text-color);
+            transition: border-color 0.3s ease;
+        }
+        .form-group input:focus {
+            border-color: var(--primary-color);
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(65,66,224,0.3);
+        }
+        .login-btn {
+            width: 100%;
+            padding: 12px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            margin-top: 8px;
+        }
+        .login-btn:hover { background-color: var(--secondary-color); }
+        .login-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .error-msg {
+            font-size: 0.9em;
+            margin-top: 12px;
+            display: none;
+            padding: 10px 14px;
+            border-radius: 8px;
+            line-height: 1.4;
+        }
+        .error-msg.error-invalid {
+            color: var(--error-color);
+            background-color: rgba(220, 53, 69, 0.12);
+            border: 1px solid rgba(220, 53, 69, 0.3);
+        }
+        .error-msg.error-offline {
+            color: #ffc107;
+            background-color: rgba(255, 193, 7, 0.12);
+            border: 1px solid rgba(255, 193, 7, 0.3);
+        }
+        .error-msg.error-generic {
+            color: var(--error-color);
+            background-color: rgba(220, 53, 69, 0.12);
+            border: 1px solid rgba(220, 53, 69, 0.3);
+        }
+        .navidrome-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background-color: rgba(255, 255, 255, 0.06);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 6px 14px;
+            margin-bottom: 24px;
+            font-size: 0.8em;
+            color: #b0b0b0;
+        }
+        .navidrome-badge svg {
+            width: 14px;
+            height: 14px;
+            opacity: 0.7;
+        }
+        /* Mobile optimizations - prevent scrolling to see password field */
+        @media (max-height: 700px) {
+            body { align-items: flex-start; padding: 20px 16px; }
+            .login-card { padding: 24px 24px 28px; }
+            .login-card img { width: 60px; margin-bottom: 12px; }
+            .login-card h1 { font-size: 1.5em; margin-bottom: 4px; }
+            .login-card p { margin-bottom: 16px; }
+            .navidrome-badge { margin-bottom: 16px; padding: 5px 12px; }
+            .form-group { margin-bottom: 12px; }
+            .form-group input { padding: 10px; }
+        }
+        @media (max-width: 480px) {
+            body { padding: 16px; }
+            .login-card { padding: 24px 20px 28px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <img src="/assets/logo.svg" alt="TrackDrop">
+        <h1>TrackDrop</h1>
+        <div class="navidrome-badge">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 15V17M6 21H18C19.1046 21 20 20.1046 20 19V13C20 11.8954 19.1046 11 18 11H6C4.89543 11 4 11.8954 4 13V19C4 20.1046 4.89543 21 6 21ZM16 11V7C16 4.79086 14.2091 3 12 3C9.79086 3 8 4.79086 8 7V11H16Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Sign in with your Navidrome credentials
+        </div>
+        <form id="loginForm" onsubmit="handleLogin(event)">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" autocomplete="username" required autofocus>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" autocomplete="current-password" required>
+            </div>
+            <button type="submit" class="login-btn" id="loginBtn">Sign In</button>
+            <div class="error-msg" id="errorMsg"></div>
+        </form>
+    </div>
+    <script>
+        if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const btn = document.getElementById('loginBtn');
+            const errEl = document.getElementById('errorMsg');
+            btn.disabled = true;
+            btn.textContent = 'Signing in...';
+            errEl.style.display = 'none';
+            try {
+                const resp = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        username: document.getElementById('username').value,
+                        password: document.getElementById('password').value
+                    })
+                });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    window.location.href = '{{ next_url | default("/", true) }}';
+                } else {
+                    errEl.className = 'error-msg';
+                    if (resp.status === 503) {
+                        errEl.classList.add('error-offline');
+                    } else {
+                        errEl.classList.add('error-invalid');
+                    }
+                    errEl.textContent = data.message || 'Login failed';
+                    errEl.style.display = 'block';
+                }
+            } catch (err) {
+                errEl.className = 'error-msg error-offline';
+                errEl.textContent = 'Could not reach the server. Please check your connection.';
+                errEl.style.display = 'block';
+            }
+            btn.disabled = false;
+            btn.textContent = 'Sign In';
+        }
+    </script>
+</body>
+</html>

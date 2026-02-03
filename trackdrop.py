@@ -9,7 +9,7 @@ from tqdm import tqdm
 from config import *
 from apis.deezer_api import DeezerAPI
 from apis.lastfm_api import LastFmAPI
-from utils import initialize_streamrip_db, update_status_file
+from utils import initialize_streamrip_db, update_status_file, get_user_history_path
 from apis.listenbrainz_api import ListenBrainzAPI
 from apis.navidrome_api import NavidromeAPI
 from apis.llm_api import LlmAPI
@@ -17,9 +17,10 @@ from downloaders.track_downloader import TrackDownloader
 from downloaders.album_downloader import AlbumDownloader
 from utils import remove_empty_folders, Tagger
 
-async def process_navidrome_cleanup():
+async def process_navidrome_cleanup(username=None):
     """
     Processes Navidrome library for cleanup based on ratings and submits feedback.
+    Uses tag-based or API-based cleanup depending on PLAYLIST_MODE.
     """
     print("Starting Navidrome cleanup and feedback submission...")
 
@@ -43,26 +44,40 @@ async def process_navidrome_cleanup():
         password_nd=PASSWORD_ND,
         music_library_path=MUSIC_LIBRARY_PATH,
         target_comment=TARGET_COMMENT,
-        lastfm_target_comment=LASTFM_TARGET_COMMENT
+        lastfm_target_comment=LASTFM_TARGET_COMMENT,
+        admin_user=globals().get('ADMIN_USER', ''),
+        admin_password=globals().get('ADMIN_PASSWORD', ''),
+        navidrome_db_path=globals().get('NAVIDROME_DB_PATH', '')
     )
-    
-    await navidrome_api.process_navidrome_library(
-        listenbrainz_api=listenbrainz_api,
-        lastfm_api=lastfm_api
-    )
+
+    playlist_mode = globals().get('PLAYLIST_MODE', 'tags')
+    if playlist_mode == 'api':
+        cleanup_user = username or USER_ND
+        print(f"[API mode] Running API-based cleanup for user '{cleanup_user}' using download history...")
+        download_history_path = get_user_history_path(cleanup_user)
+        await navidrome_api.process_api_cleanup(
+            history_path=download_history_path,
+            listenbrainz_api=listenbrainz_api,
+            lastfm_api=lastfm_api
+        )
+    else:
+        await navidrome_api.process_navidrome_library(
+            listenbrainz_api=listenbrainz_api,
+            lastfm_api=lastfm_api
+        )
 
     print("Navidrome cleanup and feedback submission finished.")
 
 
-async def process_recommendations(source="all", bypass_playlist_check=False, download_id=None):
+async def process_recommendations(source="all", bypass_playlist_check=False, download_id=None, username=None):
     """
     Processes recommendations from specified sources (ListenBrainz, Last.fm, or all).
     """
-    print(f"Starting re-command script for source: {source}...")
+    print(f"Starting TrackDrop script for source: {source}...")
     # Clear debug log
     try:
         with open('/app/debug.log', 'w') as f:
-            f.write(f"Starting re-command script for source: {source}\n")
+            f.write(f"Starting TrackDrop script for source: {source}\n")
     except:
         pass
 
@@ -93,7 +108,10 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
         listenbrainz_enabled=LISTENBRAINZ_ENABLED,
         lastfm_enabled=LASTFM_ENABLED,
         llm_target_comment=LLM_TARGET_COMMENT,
-        llm_enabled=LLM_ENABLED
+        llm_enabled=LLM_ENABLED,
+        admin_user=globals().get('ADMIN_USER', ''),
+        admin_password=globals().get('ADMIN_PASSWORD', ''),
+        navidrome_db_path=globals().get('NAVIDROME_DB_PATH', '')
     )
     track_downloader = TrackDownloader(tagger)
 
@@ -187,23 +205,61 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
         total = len(unique_recommendations)
         source_name = "ListenBrainz" if "listenbrainz" in source.lower() else "Last.fm"
         title = f"Downloading {source_name} Playlist"
-        update_status_file(download_id, "in_progress", f"Starting download of {total} tracks.", title, current_track_count=0, total_track_count=total)
+
+        track_statuses = [
+            {"artist": s.get("artist", "Unknown"), "title": s.get("title", "Unknown"), "status": "pending", "message": ""}
+            for s in unique_recommendations
+        ]
         downloaded_songs_info = []
+        failed_count = 0
+        skipped_count = 0
+
+        def _update_rec(status, message):
+            update_status_file(
+                download_id, status, message, title,
+                current_track_count=len(downloaded_songs_info),
+                total_track_count=total,
+                tracks=track_statuses,
+                downloaded_count=len(downloaded_songs_info),
+                failed_count=failed_count,
+                skipped_count=skipped_count,
+                download_type="playlist",
+            )
+
+        _update_rec("in_progress", f"Starting download of {total} tracks.")
+
         with tqdm(unique_recommendations, desc="Downloading Recommendations", unit="song") as pbar:
             for i, song_info in enumerate(pbar):
-                tqdm.write(f"Processing: {song_info['artist']} - {song_info['title']} (Source: {song_info['source']})")
+                label = f"{song_info['artist']} - {song_info['title']}"
+                tqdm.write(f"Processing: {label} (Source: {song_info['source']})")
+                track_statuses[i]["status"] = "in_progress"
+                track_statuses[i]["message"] = "Searching Deezer..."
+                _update_rec("in_progress", f"Downloading {i+1}/{total}: {label}")
                 try:
                     # Determine if this is a ListenBrainz recommendation
                     lb_recommendation = song_info.get('source', '').lower() == 'listenbrainz'
-                    downloaded_file_path = await track_downloader.download_track(song_info, lb_recommendation=lb_recommendation)
+                    downloaded_file_path = await track_downloader.download_track(song_info, lb_recommendation=lb_recommendation, navidrome_api=navidrome_api)
                     if downloaded_file_path:
+                        song_info['downloaded_path'] = downloaded_file_path
                         downloaded_songs_info.append(song_info)
-                        # Update progress
-                        update_status_file(download_id, "in_progress", f"Downloaded {len(downloaded_songs_info)} of {total} tracks.", title, current_track_count=len(downloaded_songs_info), total_track_count=total)
+                        track_statuses[i]["status"] = "completed"
+                        track_statuses[i]["message"] = "Downloaded"
+                        _update_rec("in_progress", f"Downloaded {i+1}/{total}: {label}")
+                    elif song_info.get('_duplicate'):
+                        skipped_count += 1
+                        track_statuses[i]["status"] = "skipped"
+                        track_statuses[i]["message"] = "Already in library"
+                        _update_rec("in_progress", f"Skipped {i+1}/{total}: {label} (already in library)")
                     else:
-                        tqdm.write(f"Skipping download for {song_info['artist']} - {song_info['title']} (download failed).")
+                        failed_count += 1
+                        track_statuses[i]["status"] = "failed"
+                        track_statuses[i]["message"] = "Not found on Deezer"
+                        tqdm.write(f"Skipping download for {label} (download failed).")
                 except Exception as e:
-                    tqdm.write(f"Error processing {song_info['artist']} - {song_info['title']}: {e}")
+                    failed_count += 1
+                    track_statuses[i]["status"] = "failed"
+                    track_statuses[i]["message"] = str(e)[:80]
+                    tqdm.write(f"Error processing {label}: {e}")
 
         if downloaded_songs_info:
             print("\nSuccessfully downloaded and tagged the following songs:")
@@ -211,28 +267,58 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
                 print(f"- {song['artist']} - {song['title']} (Source: {song['source']})")
 
             # Organize the newly downloaded and tagged files
-            navidrome_api.organize_music_files(
+            moved_files = navidrome_api.organize_music_files(
                 TEMP_DOWNLOAD_FOLDER,
                 MUSIC_LIBRARY_PATH
             )
+
+            # In API playlist mode, update Navidrome playlists
+            playlist_mode = globals().get('PLAYLIST_MODE', 'tags')
+            if playlist_mode == 'api':
+                rec_user = username or USER_ND
+                print(f"\n[API mode] Updating Navidrome API playlists for user '{rec_user}'...")
+                download_history_path = get_user_history_path(rec_user)
+                # Pass ALL recommendations so pre-existing library songs also get added to the playlist
+                navidrome_api.update_api_playlists(unique_recommendations, download_history_path, downloaded_songs_info, file_path_map=moved_files)
         else:
             print("\nNo new songs were downloaded.")
+            # In API mode, still update playlists with pre-existing library songs
+            playlist_mode = globals().get('PLAYLIST_MODE', 'tags')
+            if playlist_mode == 'api':
+                rec_user = username or USER_ND
+                print(f"\n[API mode] Updating Navidrome API playlists with pre-existing songs for user '{rec_user}'...")
+                download_history_path = get_user_history_path(rec_user)
+                navidrome_api.update_api_playlists(unique_recommendations, download_history_path, [])
     else:
         print("\nNo new recommendations found from enabled sources.")
 
     print("Script finished.")
     downloaded_count = len(downloaded_songs_info) if 'downloaded_songs_info' in locals() else 0
+    final_failed = failed_count if 'failed_count' in locals() else 0
+    final_skipped = skipped_count if 'skipped_count' in locals() else 0
     total_count = len(unique_recommendations)
-    message = f"Downloaded {downloaded_count} of {total_count} tracks."
+    parts = [f"{downloaded_count} downloaded"]
+    if final_skipped:
+        parts.append(f"{final_skipped} already in library")
+    if final_failed:
+        parts.append(f"{final_failed} failed")
+    message = ", ".join(parts) + "."
     title = "Download Complete"
-    update_status_file(download_id, "completed", message, title, current_track_count=downloaded_count, total_track_count=total_count)
+    final_tracks = track_statuses if 'track_statuses' in locals() else None
+    update_status_file(
+        download_id, "completed", message, title,
+        current_track_count=downloaded_count, total_track_count=total_count,
+        tracks=final_tracks, downloaded_count=downloaded_count,
+        skipped_count=final_skipped, failed_count=final_failed,
+        download_type="playlist",
+    )
     return downloaded_count, total_count
 
 async def process_fresh_releases_albums(download_id=None):
     """
     Downloads albums from Fresh Releases.
     """
-    print("Starting re-command script for fresh releases albums...")
+    print("Starting TrackDrop script for fresh releases albums...")
 
     tagger = Tagger()
     listenbrainz_api = ListenBrainzAPI(
@@ -250,7 +336,10 @@ async def process_fresh_releases_albums(download_id=None):
         lastfm_target_comment=LASTFM_TARGET_COMMENT,
         album_recommendation_comment=ALBUM_RECOMMENDATION_COMMENT,
         listenbrainz_enabled=LISTENBRAINZ_ENABLED,
-        lastfm_enabled=LASTFM_ENABLED
+        lastfm_enabled=LASTFM_ENABLED,
+        admin_user=globals().get('ADMIN_USER', ''),
+        admin_password=globals().get('ADMIN_PASSWORD', ''),
+        navidrome_db_path=globals().get('NAVIDROME_DB_PATH', '')
     )
     album_downloader = AlbumDownloader(tagger)
 
@@ -325,7 +414,7 @@ if __name__ == "__main__":
     # Initialize streamrip database at the very start
     initialize_streamrip_db()
 
-    parser = argparse.ArgumentParser(description="Re-command Recommendation Script.")
+    parser = argparse.ArgumentParser(description="TrackDrop Recommendation Script.")
     parser.add_argument(
         "--source",
         type=str,
@@ -348,6 +437,12 @@ if __name__ == "__main__":
         type=str,
         help="Unique ID for the download task, used for status tracking."
     )
+    parser.add_argument(
+        "--user",
+        type=str,
+        default=None,
+        help="Username for per-user download history tracking. Defaults to USER_ND from config."
+    )
     args = parser.parse_args()
 
     # Initial status update
@@ -357,10 +452,10 @@ if __name__ == "__main__":
         if args.source == "fresh_releases":
             asyncio.run(process_fresh_releases_albums(download_id=args.download_id))
         elif args.cleanup:
-            asyncio.run(process_navidrome_cleanup())
+            asyncio.run(process_navidrome_cleanup(username=args.user))
             update_status_file(args.download_id, "completed", "Cleanup finished successfully.", "Cleanup completed")
         else:
-            asyncio.run(process_recommendations(source=args.source, bypass_playlist_check=args.bypass_playlist_check, download_id=args.download_id))
+            asyncio.run(process_recommendations(source=args.source, bypass_playlist_check=args.bypass_playlist_check, download_id=args.download_id, username=args.user))
     except Exception as e:
         update_status_file(args.download_id, "failed", f"Download failed: {e}", f"Download failed: {e}")
         raise # Re-raise the exception after updating status

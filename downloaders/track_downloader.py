@@ -4,7 +4,7 @@ import asyncio
 from streamrip.client import DeezerClient
 from streamrip.media import Track, PendingSingle
 from streamrip.config import Config
-from streamrip.db import Database, Downloads, Failed
+from streamrip.db import Database, Downloads, Failed, Dummy
 from mutagen.id3 import ID3, COMM, error
 from tqdm import tqdm
 import sys
@@ -18,7 +18,7 @@ class TrackDownloader:
         self.temp_download_folder = config.TEMP_DOWNLOAD_FOLDER
         self.deezer_arl = config.DEEZER_ARL
 
-    async def download_track(self, song_info, lb_recommendation=None):
+    async def download_track(self, song_info, lb_recommendation=None, deezer_link=None, navidrome_api=None):
         """Downloads a track using the configured method."""
         # Reload config to get the latest DOWNLOAD_METHOD
         importlib.reload(config)
@@ -37,20 +37,28 @@ class TrackDownloader:
         else:
             comment = config.LASTFM_TARGET_COMMENT
 
-        # Debug logging
-        debug_info = {
-            'song_info': song_info,
-            'lb_recommendation': lb_recommendation,
-            'determined_comment': comment,
-            'timestamp': __import__('datetime').datetime.now().isoformat()
-        }
-        with open('/app/debug.log', 'a') as f:
-            f.write(f"TRACK_DOWNLOADER_START: {debug_info}\n")
-
-        deezer_link = await self._get_deezer_link_and_details(song_info)
+        if not deezer_link:
+            deezer_link = await self._get_deezer_link_and_details(song_info)
         if not deezer_link:
             print(f"  ❌ No Deezer link found for {song_info['artist']} - {song_info['title']}")
             return None
+
+        # Duplicate check: if navidrome_api is provided, search using the
+        # Deezer canonical metadata (which matches what Navidrome indexes).
+        if navidrome_api:
+            search_artist = song_info.get('deezer_album_artist') or (song_info.get('deezer_artists', [None]) or [None])[0] or song_info['artist']
+            search_title = song_info.get('deezer_title') or song_info['title']
+            search_album = song_info.get('album') or None
+            try:
+                salt, token = navidrome_api._get_navidrome_auth_params()
+                existing = navidrome_api._search_song_in_navidrome(search_artist, search_title, salt, token, album=search_album)
+                if existing:
+                    matched_album = existing.get('album', '?')
+                    print(f"  Already in Navidrome: {search_artist} - {search_title} [{matched_album}] (id={existing['id']})")
+                    song_info['_duplicate'] = True
+                    return None
+            except Exception as e:
+                print(f"  Warning: Navidrome duplicate check failed: {e}", file=sys.stderr)
 
         downloaded_file_path = None
         if current_download_method == "deemix":
@@ -62,20 +70,61 @@ class TrackDownloader:
             return None
 
         if downloaded_file_path:
-            self.tagger.tag_track(
-                downloaded_file_path,
-                song_info['artist'],
-                song_info['title'],
-                song_info['album'],
-                song_info['release_date'],
-                song_info['recording_mbid'],
-                song_info['source'],
-                song_info.get('album_art')
-            )
-            self.tagger.add_comment_to_file(
-                downloaded_file_path,
-                comment
-            )
+            # Look up MusicBrainz artist IDs for all sources
+            artist_mbids = []
+            recording_mbid = song_info.get('recording_mbid')
+            try:
+                from apis.listenbrainz_api import ListenBrainzAPI
+                lb_api = ListenBrainzAPI(root_lb="", token_lb="", user_lb="", listenbrainz_enabled=False)
+                recording_mbid, artist_mbids = await lb_api.lookup_mbids(
+                    song_info['artist'], song_info['title'], recording_mbid
+                )
+                if recording_mbid:
+                    song_info['recording_mbid'] = recording_mbid
+                if artist_mbids:
+                    print(f"  Found {len(artist_mbids)} artist MBID(s) for {song_info['artist']} - {song_info['title']}")
+            except Exception as e:
+                print(f"  Warning: Could not look up MBIDs: {e}", file=sys.stderr)
+
+            playlist_mode = getattr(config, 'PLAYLIST_MODE', 'tags')
+            if playlist_mode == 'api':
+                # API mode: tag with Deezer's metadata (all contributors) for
+                # consistency with the actual release. Streamrip already embeds
+                # Deezer metadata but only the primary artist — we fix multi-artist.
+                tag_artists = song_info.get('deezer_artists')
+                tag_title = song_info.get('deezer_title', song_info['title'])
+                tag_album_artist = song_info.get('deezer_album_artist')
+                self.tagger.tag_track(
+                    downloaded_file_path,
+                    None,  # no singular artist — use plural ARTISTS tag instead
+                    tag_title,
+                    song_info['album'],
+                    song_info['release_date'],
+                    song_info['recording_mbid'],
+                    song_info['source'],
+                    song_info.get('album_art'),
+                    album_artist=tag_album_artist,
+                    artists=tag_artists,
+                    artist_mbids=artist_mbids
+                )
+            else:
+                # Tags mode: tag with recommendation source metadata and add
+                # comment tag for source-based cleanup
+                self.tagger.tag_track(
+                    downloaded_file_path,
+                    song_info['artist'],
+                    song_info['title'],
+                    song_info['album'],
+                    song_info['release_date'],
+                    song_info['recording_mbid'],
+                    song_info['source'],
+                    song_info.get('album_art'),
+                    artist_mbids=artist_mbids
+                )
+                self.tagger.add_comment_to_file(
+                    downloaded_file_path,
+                    comment
+                )
             return downloaded_file_path
         else:
             print(f"  ❌ Failed to download: {song_info['artist']} - {song_info['title']}")
@@ -85,7 +134,7 @@ class TrackDownloader:
         """Fetches Deezer link and updates song_info with album details."""
         from apis.deezer_api import DeezerAPI
         deezer_api = DeezerAPI()
-        deezer_link = await deezer_api.get_deezer_track_link(song_info['artist'], song_info['title'])
+        deezer_link = await deezer_api.get_deezer_track_link(song_info['artist'], song_info['title'], album=song_info.get('album'))
         if deezer_link:
             track_id = deezer_link.split('/')[-1]
             deezer_details = await deezer_api.get_deezer_track_details(track_id)
@@ -93,6 +142,13 @@ class TrackDownloader:
                 song_info['album'] = deezer_details.get('album', song_info['album'])
                 song_info['release_date'] = deezer_details.get('release_date', song_info['release_date'])
                 song_info['album_art'] = deezer_details.get('album_art', song_info.get('album_art'))
+                # Store Deezer's full metadata for consistent tagging
+                if deezer_details.get('artists'):
+                    song_info['deezer_artists'] = deezer_details['artists']
+                if deezer_details.get('album_artist'):
+                    song_info['deezer_album_artist'] = deezer_details['album_artist']
+                if deezer_details.get('title'):
+                    song_info['deezer_title'] = deezer_details['title']
         return deezer_link
 
     def _download_track_deemix(self, deezer_link, song_info, temp_download_folder):
@@ -190,8 +246,9 @@ class TrackDownloader:
             await client.login()
             track_id = deezer_link.split('/')[-1]
 
-            # Creating a database for streamrip
-            rip_db = Database(downloads=Downloads("/app/temp_downloads/downloads.db"), failed=Failed("/app/temp_downloads/failed_downloads.db"))
+            # Use Dummy DB so streamrip never skips tracks it has seen before.
+            # Duplicate checking is handled upstream (Navidrome search).
+            rip_db = Database(downloads=Dummy(), failed=Dummy())
 
             # Get the PendingSingle object
             pending = PendingSingle(id=track_id, client=client, config=streamrip_config, db=rip_db)

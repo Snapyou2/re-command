@@ -3,7 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Re-command UI</title>
+    <meta name="theme-color" content="#4142e0">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" href="/favicon.ico">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>TrackDrop</title>
     <style>
         :root {
             --primary-color: #4142e0; 
@@ -126,22 +131,29 @@
 
         .download-queue-item {
             display: flex;
-            align-items: center;
-            padding: 10px;
+            align-items: flex-start;
+            padding: 12px;
             margin-bottom: 8px;
             background-color: #3a3a5a;
             border-radius: 8px;
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            flex-direction: column;
         }
 
         .download-queue-item.in_progress { border-left: 4px solid var(--info-color); }
         .download-queue-item.completed { border-left: 4px solid var(--success-color); }
         .download-queue-item.failed { border-left: 4px solid var(--error-color); }
 
+        .download-queue-item-header {
+            display: flex;
+            align-items: center;
+            width: 100%;
+        }
+
         .download-queue-item .track-info {
             flex-grow: 1;
             margin-left: 10px;
-            min-width: 0; /* Allow content to shrink */
+            min-width: 0;
         }
 
         .download-queue-item .track-info > div {
@@ -151,38 +163,99 @@
         }
 
         .download-queue-item .status-icon {
-            width: 48px; /* Adjusted to match spinner size */
-            height: 48px; /* Adjusted to match spinner size */
+            width: 32px;
+            height: 32px;
             margin-left: 10px;
             flex-shrink: 0;
-            display: flex; /* Make it a flex container */
-            align-items: center; /* Center content vertically */
-            justify-content: center; /* Center content horizontally */
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .download-queue-item .status-icon.in_progress {
-            /* The spinner itself will handle the animation and appearance */
-            /* Removed background-color and border-radius as the spinner is now an SVG */
-            animation: none; /* Remove pulse animation as the inner spinner has its own spin animation */
+            animation: none;
         }
         .download-queue-item .status-icon.completed svg { color: var(--success-color); }
         .download-queue-item .status-icon.failed svg { color: var(--error-color); }
 
+        /* Progress bar */
+        .dq-progress-bar {
+            width: 100%;
+            height: 4px;
+            background-color: #2a2a4a;
+            border-radius: 2px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+        .dq-progress-bar-inner {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.3s ease;
+        }
+
+        /* Stats row */
+        .dq-stats {
+            display: flex;
+            gap: 12px;
+            font-size: 0.8em;
+            margin-top: 6px;
+            flex-wrap: wrap;
+        }
+        .dq-stat { display: flex; align-items: center; gap: 4px; }
+        .dq-stat-dot {
+            width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+        }
+        .dq-stat-dot.downloaded { background-color: var(--success-color); }
+        .dq-stat-dot.skipped { background-color: var(--secondary-color); }
+        .dq-stat-dot.failed { background-color: var(--error-color); }
+        .dq-stat-dot.pending { background-color: #666; }
+
+        /* Expandable track list */
+        .dq-expand-btn {
+            background: none; border: none; color: var(--accent-color);
+            cursor: pointer; font-size: 0.8em; padding: 4px 0; margin-top: 4px;
+            transition: color 0.2s; width: auto; box-shadow: none;
+        }
+        .dq-expand-btn:hover { color: var(--primary-color); background: none; transform: none; }
+        .dq-track-list {
+            width: 100%;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 6px;
+            display: none;
+        }
+        .dq-track-list.open { display: block; }
+        .dq-track-entry {
+            display: flex;
+            align-items: center;
+            padding: 4px 8px;
+            font-size: 0.8em;
+            border-radius: 4px;
+            gap: 8px;
+        }
+        .dq-track-entry:nth-child(odd) { background-color: rgba(255,255,255,0.03); }
+        .dq-track-entry .dq-track-status-icon {
+            width: 14px; height: 14px; flex-shrink: 0;
+        }
+        .dq-track-entry .dq-track-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .dq-track-entry .dq-track-msg { color: #888; font-size: 0.9em; flex-shrink: 0; }
+
         /* Responsive adjustments for the download queue */
         @media (max-width: 768px) {
             .download-queue-modal {
-                width: calc(80% - 17px); /* Adjust panel width for smaller screens, account for scrollbar */
-                right: calc(-80% + 17px); /* Hidden initially, adjust for scrollbar */
-                top: 20px; /* Apply top margin responsively */
-                height: calc(100% - 40px); /* Adjust height responsively */
+                width: calc(85% - 17px);
+                right: calc(-85% + 17px);
+                top: 0;
+                height: 100%;
+                border-radius: 0;
                 border-top-left-radius: 12px;
                 border-bottom-left-radius: 12px;
+                z-index: 1100;
             }
+            /* On mobile, overlay the panel instead of pushing content */
             body.download-queue-panel-open {
-                padding-right: calc( (80% - 17px) + 20px); /* Adjust body padding for responsive panel's actual width + existing padding */
+                padding-right: 20px;
             }
-            /* No specific .container adjustment needed for small screens when panel is open. */
-            /* The container will naturally adjust with body padding and its own max-width/margin auto. */
         }
 
         .modal {
@@ -777,6 +850,12 @@
             cursor: not-allowed;
         }
 
+        .download-link-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
         /* Responsive adjustments */
         @media (max-width: 768px) {
             .container {
@@ -808,7 +887,68 @@
                 width: 100px;
                 height: 100px;
             }
+            .download-link-row {
+                flex-direction: column;
+            }
+            .download-link-row input[type="text"] {
+                width: 100% !important;
+            }
+            .download-link-row button {
+                width: 100%;
+            }
         }
+        /* Playlist mode popup */
+        .pl-popup-overlay {
+            display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.6); z-index: 2000; align-items: center; justify-content: center;
+        }
+        .pl-popup-overlay.open { display: flex; }
+        .pl-popup {
+            background: #2a2a3e; border-radius: 12px; padding: 24px; max-width: 420px; width: 90%;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.1);
+        }
+        .pl-popup h3 { margin: 0 0 12px; }
+        .pl-popup p { color: #b0b0b0; font-size: 0.9em; margin: 0 0 16px; }
+        .pl-popup-btns { display: flex; flex-direction: column; gap: 10px; }
+        .pl-popup-btns button {
+            padding: 12px 16px; border: none; border-radius: 8px; cursor: pointer;
+            font-size: 0.95em; transition: background 0.2s;
+        }
+        .pl-popup-btns .btn-monitor { background: var(--accent-color); color: #000; }
+        .pl-popup-btns .btn-monitor:hover { filter: brightness(1.15); }
+        .pl-popup-btns .btn-once { background: #3a3a5a; color: var(--text-color); }
+        .pl-popup-btns .btn-once:hover { background: #4a4a6a; }
+        .pl-popup-interval {
+            display: none; margin-top: 12px; padding: 12px; background: rgba(255,255,255,0.04);
+            border-radius: 8px;
+        }
+        .pl-popup-interval.open { display: block; }
+        .pl-popup-interval label { font-size: 0.85em; color: #b0b0b0; }
+        .pl-popup-interval select {
+            margin-top: 4px; padding: 8px; border-radius: 4px; width: 100%;
+            background-color: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color);
+        }
+
+        /* Monitored playlists list in settings */
+        .mp-list { margin-top: 12px; }
+        .mp-item {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 10px 12px; border-radius: 8px; margin-bottom: 8px;
+            background: rgba(255,255,255,0.04);
+        }
+        .mp-item-info { flex: 1; min-width: 0; }
+        .mp-item-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .mp-item-meta { font-size: 0.8em; color: #888; margin-top: 2px; }
+        .mp-item-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; margin-left: 10px; }
+        .mp-item-actions select {
+            padding: 4px 6px; border-radius: 4px; font-size: 0.8em;
+            background-color: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color);
+        }
+        .mp-item-actions button {
+            padding: 4px 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.8em;
+        }
+        .mp-btn-sync { background: var(--accent-color); color: #fff; }
+        .mp-btn-remove { background: var(--error-color); color: #fff; }
     </style>
 </head>
 <body>
@@ -825,18 +965,22 @@
             <svg class="header-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" onclick="openDownloadQueueModal()">
                 <path d="M 17.727626,19.369618 V 0.99999999 m 0,18.36961801 -5.004657,-5.009896 m 5.004657,5.009896 5.004658,-5.009896 M 1,1.7696715 H 12.200214 M 1,7.4045513 H 12.200214 M 1,13.03943 h 5.6001067" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
+            <!-- Logout icon -->
+            <svg class="header-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" onclick="window.location.href='/logout'" title="Logout ({{ username }})">
+                <path d="M16 17L21 12M21 12L16 7M21 12H9M9 3H7.8C6.11984 3 5.27976 3 4.63803 3.32698C4.07354 3.6146 3.6146 4.07354 3.32698 4.63803C3 5.27976 3 6.11984 3 7.8V16.2C3 17.8802 3 18.7202 3.32698 19.362C3.6146 19.9265 4.07354 20.3854 4.63803 20.673C5.27976 21 6.11984 21 7.8 21H9" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
         </div>
-        <img src="/assets/logo.svg" alt="Re-command Logo" class="logo">
-        <h1>Re-command Docker UI</h1>
+        <!-- Spacer to clear header icons -->
+        <div style="height: 40px;"></div>
 
         <div id="message" class="message" style="display: none;"></div>
 
         <!-- Welcome message for empty configuration -->
         <div id="welcomeMessage" class="playlist-section" style="display: none;">
             <div style="text-align: center; padding: 40px;">
-                <h2 style="color: var(--primary-color); margin-bottom: 20px;">Welcome to Re-command!</h2>
+                <h2 style="color: var(--primary-color); margin-bottom: 20px;">Welcome to TrackDrop!</h2>
                 <p style="font-size: 1.2em; margin-bottom: 30px; color: var(--text-color);">
-                    To get started, please configure your music services in the settings menu (gear icon in the top right).
+                    To get started, please configure your music services in the settings menu (gear icon in the top left).
                 </p>
                 <p style="color: #b0b0b0; margin-bottom: 20px;">
                     You can set up ListenBrainz for music discovery and recommendations, Last.fm for additional playlist sources, and Navidrome for your music library management.
@@ -847,25 +991,20 @@
             </div>
         </div>
 
+        <div id="downloadFromLinkSection" class="playlist-section" style="border-top: none; padding-top: 10px; margin-top: 10px;">
+            <div class="form-group" style="margin-bottom: 10px;">
+                <div class="download-link-row">
+                    <input type="text" id="musicLinkInput" placeholder="Paste a song, album, or playlist link..." style="flex: 1; width: 100%;">
+                    <button id="downloadLinkBtn" onclick="downloadFromLink()" style="white-space: nowrap; margin: 0;">Download</button>
+                </div>
+            </div>
+        </div>
+
         <div id="freshReleasesSection" class="playlist-section" style="display: none;">
             <div class="playlist-header">
                 <h2>Fresh Releases</h2>
             </div>
             <div id="freshReleasesPlaylist" class="playlist-content"></div>
-        </div>
-
-        <div id="downloadFromLinkSection" class="playlist-section">
-            <div class="playlist-header">
-                <h2>Download from Link</h2>
-            </div>
-            <div class="form-group">
-                <label for="musicLinkInput">Paste Music Link (Track or Album):</label>
-                <input type="text" id="musicLinkInput" placeholder="e.g., Spotify, YouTube, Deezer link">
-            </div>
-
-            <div class="playlist-controls">
-                <button id="downloadLinkBtn" onclick="downloadFromLink()">Download Link</button>
-            </div>
         </div>
 
         <div id="listenBrainzSection" class="playlist-section" style="display: none;">
@@ -916,6 +1055,12 @@
             <div id="llmPlaylist" class="playlist-content"></div>
         </div>
 
+        <div id="runNowSection" class="playlist-section" style="display: none; padding-top: 10px;">
+            <button id="runNowBtn" onclick="runNow()" style="width: 100%; background-color: #3a3a5a; border: 1px solid var(--border-color); color: var(--text-color); font-size: 0.95em; padding: 10px;">
+                Fetch All Recommendations Now
+            </button>
+        </div>
+
         <!-- Download Queue Section -->
         <div id="downloadQueueSection" class="playlist-section" style="display: none;">
             <div class="playlist-header">
@@ -941,39 +1086,9 @@
             <!-- Configuration Section -->
             <div class="settings">
                 <details>
-                    <summary>Configuration</summary>
+                    <summary>Music Services</summary>
                     <div style="padding: 15px;">
-                        <h3>Navidrome Settings</h3>
-                        <div class="form-group">
-                            <label for="navidromeUrl">URL:</label>
-                            <input type="text" id="navidromeUrl" placeholder="http://your-navidrome-server:4533">
-                        </div>
-                        <div class="form-group">
-                            <label for="navidromeUser">Username:</label>
-                            <input type="text" id="navidromeUser">
-                        </div>
-                        <div class="form-group">
-                            <label for="navidromePassword">Password:</label>
-                            <input type="password" id="navidromePassword">
-                        </div>
-
-                        <h3>Download Settings</h3>
-                        <div class="form-group">
-                            <label for="deezerArl">
-                                ARL field:
-                                <span class="help-icon" title="Log into Deezer web → Open browser dev tools (F12) → Go to Application/Storage → Cookies → deezer.com → Copy 'arl' cookie value">ℹ️</span>
-                            </label>
-                            <input type="text" id="deezerArl" placeholder="Your Deezer ARL token">
-                        </div>
-                        <div class="form-group">
-                            <label for="downloadMethod">Downloader:</label>
-                            <select id="downloadMethod" style="padding: 8px; border-radius: 4px; background-color: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color);">
-                                <option value="streamrip">Streamrip</option>
-                                <option value="deemix">Deemix</option>
-                            </select>
-                        </div>
-
-                        <h3>ListenBrainz Settings</h3>
+                        <h3>ListenBrainz</h3>
                         <div class="form-group">
                             <label>
                                 <input type="checkbox" id="listenbrainzEnabled"> Enable ListenBrainz
@@ -993,7 +1108,7 @@
                             </div>
                         </div>
 
-                        <h3>Last.fm Settings</h3>
+                        <h3>Last.fm</h3>
                         <div class="form-group">
                             <label>
                                 <input type="checkbox" id="lastfmEnabled"> Enable Last.fm
@@ -1027,51 +1142,7 @@
                             </div>
                         </div>
 
-                        <h3>LLM Suggestions Settings</h3>
-                        <div class="form-group">
-                            <label>
-                                <input type="checkbox" id="llmEnabled"> Enable LLM Suggestions
-                            </label>
-                        </div>
-                        <div id="llmOptions" style="display: none; padding-left: 20px; border-left: 2px solid var(--border-color); margin-left: 5px;">
-                            <div class="form-group">
-                                <label for="llmProvider">LLM Provider:</label>
-                                <select id="llmProvider" style="padding: 8px; border-radius: 4px; background-color: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color);">
-                                    <option value="gemini">Gemini</option>
-                                    <option value="openrouter">OpenRouter</option>
-                                    <option value="llama">Llama.cpp</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label for="llmModelName">Model Name (optional):</label>
-                                <input type="text" id="llmModelName" placeholder="e.g., gemini-2.5-flash">
-                            </div>
-                            <div class="form-group" id="llmApiKeyGroup">
-                                <label for="llmApiKey">API Key:</label>
-                                <input type="password" id="llmApiKey" placeholder="Your LLM API Key">
-                            </div>
-                            <div class="form-group" id="llmBaseUrlGroup" style="display: none;">
-                                <label for="llmBaseUrl">Base URL:</label>
-                                <input type="text" id="llmBaseUrl" placeholder="e.g., http://localhost:8080/v1/chat/completions">
-                                <small style="color: #b0b0b0; display: block; margin-top: 5px;">
-                                    Required for Llama.cpp. URL of your local Llama.cpp server.
-                                </small>
-                            </div>
-                        </div>
-
-                        <h3>UI Visibility Settings</h3>
-                        <div class="form-group">
-                            <label>
-                                <input type="checkbox" id="hideDownloadFromLink"> Hide "Download from Link" section
-                            </label>
-                        </div>
-                        <div class="form-group">
-                            <label>
-                                <input type="checkbox" id="hideFreshReleases"> Hide "Fresh Releases" section
-                            </label>
-                        </div>
-
-                        <button onclick="saveConfiguration()">Save Configuration</button>
+                        <button onclick="saveUserSettings()">Save Settings</button>
                     </div>
                 </details>
 
@@ -1086,7 +1157,13 @@
                             <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
                                 <select id="cronHour" style="padding: 8px; border-radius: 4px; background-color: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color);">
                                     {% for hour in range(24) %}
-                                    <option value="{{ hour }}" {% if hour == cron_hour %}selected{% endif %}>{{ "%02d"|format(hour) }}:00</option>
+                                    <option value="{{ hour }}" {% if hour == cron_hour %}selected{% endif %}>{{ "%02d"|format(hour) }}</option>
+                                    {% endfor %}
+                                </select>
+                                :
+                                <select id="cronMinute" style="padding: 8px; border-radius: 4px; background-color: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color);">
+                                    {% for minute in range(0, 60, 5) %}
+                                    <option value="{{ minute }}" {% if minute == cron_minute %}selected{% endif %}>{{ "%02d"|format(minute) }}</option>
                                     {% endfor %}
                                 </select>
                                 <select id="cronDay" style="padding: 8px; border-radius: 4px; background-color: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color);">
@@ -1099,48 +1176,138 @@
                                     <option value="6" {% if cron_day == 6 %}selected{% endif %}>Saturday</option>
                                 </select>
                             </div>
+                            <div style="margin-bottom: 10px;">
+                                <label for="cronTimezone" style="font-size: 0.9em;">Timezone:</label>
+                                <select id="cronTimezone" style="padding: 8px; border-radius: 4px; background-color: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color); width: 100%; margin-top: 4px;">
+                                    {% for tz in timezones %}
+                                    <option value="{{ tz }}" {% if tz == cron_timezone %}selected{% endif %}>{{ tz }}</option>
+                                    {% endfor %}
+                                </select>
+                                <small style="color: #b0b0b0; display: block; margin-top: 4px;">
+                                    Select your local timezone. The schedule will be converted to UTC for the container.
+                                </small>
+                            </div>
                             <input type="hidden" id="cronInput" value="{{ cron_schedule }}">
                         </div>
 
                         <div class="form-group">
                             <label>
-                                <input type="checkbox" id="disableCron">
+                                <input type="checkbox" id="disableCron" {% if not cron_enabled %}checked{% endif %}>
                                 Disable Automatic Downloads
                             </label>
                         </div>
 
-                        <div class="form-group">
-                            <label>
-                                <input type="checkbox" id="albumRecommendationEnabled">
-                                Download fresh releases as recommendations
-                                <span class="help-icon" title="When enabled, albums downloaded from fresh releases will be tagged with 'album_recommendation' and songs rated ≤3 stars will be removed during cleanup">ℹ️</span>
-                            </label>
-                        </div>
-
                         <button onclick="saveAutomationOptions()">Save Automation Options</button>
+
+                        <hr style="border-color: var(--border-color); margin: 20px 0;">
+
+                        <h3 style="margin-bottom: 8px;">Monitored Playlists</h3>
+                        <small style="color: #b0b0b0; display: block; margin-bottom: 12px;">
+                            Playlists below are automatically checked for new tracks at their configured interval.
+                        </small>
+                        <div id="monitoredPlaylistsList" class="mp-list">
+                            <p style="color: #666; font-size: 0.9em;">Loading...</p>
+                        </div>
                     </div>
                 </details>
 
-<details>
-    <summary>Maintenance</summary>
-    <div style="padding: 15px;">
-        <div class="form-group">
-            <label>Navidrome Cleanup:</label>
-            <button onclick="triggerNavidromeCleanup()">Remove Tagged Songs</button>
-            <small style="color: #b0b0b0; display: block; margin-top: 5px;">
-                Manually remove songs tagged with recommendation comments from Navidrome
-            </small>
-        </div>
+                <details>
+                    <summary>Mobile Apps</summary>
+                    <div style="padding: 15px;">
+                        <h3>Android</h3>
+                        <p style="color: #b0b0b0; margin-bottom: 10px;">Install this site as a PWA (Progressive Web App) to share links directly:</p>
+                        <ol style="color: #b0b0b0; margin-left: 20px; margin-bottom: 15px;">
+                            <li>In Chrome, tap the menu (⋮) and select "Add to Home screen"</li>
+                            <li>Once installed, share any music link and select TrackDrop from the share sheet</li>
+                        </ol>
 
-        <div class="form-group" style="margin-top: 20px;">
-            <label>Smart Playlist Creation:</label>
-            <button onclick="createSmartPlaylists()">Create Smart Playlists</button>
-            <small style="color: #b0b0b0; display: block; margin-top: 5px;">
-                Create .nsp files for automatic recommendation playlists based on comment tags
-            </small>
+                        <h3>iOS (iPhone/iPad)</h3>
+                        <p style="color: #b0b0b0; margin-bottom: 10px;">Use iOS Shortcuts to share links directly to TrackDrop:</p>
+                        <a href="/ios-shortcut" target="_blank" style="display: inline-block; background: var(--primary-color); color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; margin-bottom: 10px;">Set Up iOS Shortcut</a>
+                        <p style="color: #888; font-size: 0.85em;">Opens a page with setup instructions and your personal API key.</p>
+                    </div>
+                </details>
+            </div>
         </div>
     </div>
-</details>
+
+    <!-- First-time Setup Wizard -->
+    <div id="setupWizard" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 550px;">
+            <h2 style="color: var(--primary-color); margin-bottom: 10px;">Welcome to TrackDrop, {{ username }}!</h2>
+            <p style="color: #b0b0b0; margin-bottom: 20px;">Let's set up your music recommendation sources. You can always change these later in Settings.</p>
+
+            <div id="wizardStep1">
+                <h3 style="color: var(--secondary-color);">ListenBrainz</h3>
+                <p style="color: #b0b0b0; font-size: 0.9em; margin-bottom: 10px;">Get weekly personalized recommendations based on your listening history.</p>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="wizardLbEnabled"> Enable ListenBrainz
+                    </label>
+                </div>
+                <div id="wizardLbOptions" style="display: none; padding-left: 20px; border-left: 2px solid var(--border-color); margin-left: 5px;">
+                    <div class="form-group">
+                        <label for="wizardLbUser">Username:</label>
+                        <input type="text" id="wizardLbUser" placeholder="Your ListenBrainz username">
+                    </div>
+                    <div class="form-group">
+                        <label for="wizardLbToken">Token:</label>
+                        <input type="text" id="wizardLbToken" placeholder="Your ListenBrainz API token">
+                        <small style="color: #b0b0b0; display: block; margin-top: 5px;">Get from listenbrainz.org/profile/ → API Keys</small>
+                    </div>
+                </div>
+
+                <hr style="border-color: var(--border-color); margin: 20px 0;">
+
+                <h3 style="color: var(--secondary-color);">Last.fm</h3>
+                <p style="color: #b0b0b0; font-size: 0.9em; margin-bottom: 10px;">Get recommendations from Last.fm's weekly playlist.</p>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="wizardLfEnabled"> Enable Last.fm
+                    </label>
+                </div>
+                <div id="wizardLfOptions" style="display: none; padding-left: 20px; border-left: 2px solid var(--border-color); margin-left: 5px;">
+                    <div class="form-group">
+                        <label for="wizardLfUsername">Username:</label>
+                        <input type="text" id="wizardLfUsername" placeholder="Your Last.fm username">
+                    </div>
+                    <div class="form-group">
+                        <label for="wizardLfPassword">Password:</label>
+                        <input type="password" id="wizardLfPassword" placeholder="Your Last.fm password">
+                    </div>
+                    <div class="form-group">
+                        <label for="wizardLfApiKey">API Key:</label>
+                        <input type="text" id="wizardLfApiKey" placeholder="Your Last.fm API key">
+                        <small style="color: #b0b0b0; display: block; margin-top: 5px;">Get from last.fm/api/account/create</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="wizardLfApiSecret">API Secret:</label>
+                        <input type="text" id="wizardLfApiSecret" placeholder="Your Last.fm API secret">
+                    </div>
+                </div>
+
+                <hr style="border-color: var(--border-color); margin: 20px 0;">
+
+                <h3 style="color: var(--secondary-color);">Mobile App</h3>
+                <p style="color: #b0b0b0; font-size: 0.9em; margin-bottom: 10px;">Share music links directly from your phone to download them instantly.</p>
+
+                <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+                    <div style="flex: 1; min-width: 200px; background: #1a1a2e; padding: 12px; border-radius: 8px;">
+                        <strong style="color: #4CAF50;">Android</strong>
+                        <p style="color: #888; font-size: 0.85em; margin-top: 5px;">Tap menu (⋮) → "Add to Home screen" to install as an app.</p>
+                    </div>
+                    <div style="flex: 1; min-width: 200px; background: #1a1a2e; padding: 12px; border-radius: 8px;">
+                        <strong style="color: #007AFF;">iOS</strong>
+                        <p style="color: #888; font-size: 0.85em; margin-top: 5px;">
+                            <a href="/ios-shortcut" target="_blank" style="color: var(--primary-color);">Set up iOS Shortcut</a> to share links from any app.
+                        </p>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button onclick="completeSetupWizard()" style="flex: 1;">Save & Get Started</button>
+                    <button onclick="skipSetupWizard()" style="flex: 1; background-color: #3a3a5a;">Skip for Now</button>
+                </div>
             </div>
         </div>
     </div>
@@ -1158,13 +1325,56 @@
         </div>
     </div>
 
+    <!-- Playlist download mode popup -->
+    <div id="playlistModeOverlay" class="pl-popup-overlay">
+        <div class="pl-popup">
+            <h3>Download Playlist</h3>
+            <p id="playlistModeName" style="font-weight: 500; margin-bottom: 4px;"></p>
+            <p id="playlistModeUrl" style="font-size: 0.8em; color: #888; word-break: break-all;"></p>
+            <p id="playlistModeTrackCount" style="font-size: 0.85em; color: #b0b0b0; margin-bottom: 12px;"></p>
+
+            <!-- Duplicate name warning -->
+            <div id="playlistDuplicateSection" style="display: none; margin-bottom: 14px; padding: 10px; background: rgba(255,170,0,0.1); border-radius: 8px; border: 1px solid rgba(255,170,0,0.3);">
+                <p style="color: #ffa600; font-size: 0.9em; margin: 0 0 8px;">A playlist with this name already exists in Navidrome.</p>
+                <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                    <label style="font-size: 0.85em; cursor: pointer;">
+                        <input type="radio" name="playlistDuplicateAction" value="overwrite" checked> Overwrite existing
+                    </label>
+                    <label style="font-size: 0.85em; cursor: pointer;">
+                        <input type="radio" name="playlistDuplicateAction" value="rename"> Use different name
+                    </label>
+                </div>
+                <input type="text" id="playlistRenameInput" style="display: none; width: 100%; padding: 8px; border-radius: 4px; background: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color); box-sizing: border-box;" placeholder="Enter new playlist name">
+            </div>
+
+            <div class="pl-popup-btns">
+                <button class="btn-monitor" onclick="submitPlaylistDownload(true)">
+                    Download &amp; Monitor for new tracks
+                </button>
+                <button class="btn-once" onclick="submitPlaylistDownload(false)">
+                    Download once
+                </button>
+            </div>
+            <div id="playlistIntervalSection" class="pl-popup-interval">
+                <label>Check for new tracks every:
+                    <select id="playlistPollInterval">
+                        <option value="6">6 hours</option>
+                        <option value="12">12 hours</option>
+                        <option value="24" selected>24 hours</option>
+                        <option value="48">2 days</option>
+                        <option value="168">Weekly</option>
+                    </select>
+                </label>
+            </div>
+        </div>
+    </div>
+
     <script>
         function openSettingsModal() {
             document.getElementById('settingsModal').style.display = 'block';
-            loadConfiguration(); // Ensure configuration is loaded when modal opens
-            updateListenBrainzVisibility(); // Update visibility on modal open
-            updateLastFmVisibility(); // Update visibility on modal open
-            updateLlmVisibility();
+            loadUserSettings();
+            loadConfiguration();
+            loadMonitoredPlaylists();
         }
 
         function closeSettingsModal() {
@@ -1193,25 +1403,6 @@
             document.getElementById('listenbrainzOptions').style.display = isEnabled ? 'block' : 'none';
         }
 
-        function updateLlmVisibility() {
-            const isEnabled = document.getElementById('llmEnabled').checked;
-            document.getElementById('llmOptions').style.display = isEnabled ? 'block' : 'none';
-            updateLlmProviderVisibility();
-        }
-
-        function updateLlmProviderVisibility() {
-            const provider = document.getElementById('llmProvider').value;
-            const baseUrlGroup = document.getElementById('llmBaseUrlGroup');
-            const apiKeyGroup = document.getElementById('llmApiKeyGroup');
-            if (provider === 'llama') {
-                baseUrlGroup.style.display = 'block';
-                apiKeyGroup.style.display = 'none';
-            } else {
-                baseUrlGroup.style.display = 'none';
-                apiKeyGroup.style.display = 'block';
-            }
-        }
-
         function updateLastFmVisibility() {
             const isEnabled = document.getElementById('lastfmEnabled').checked;
             document.getElementById('lastfmOptions').style.display = isEnabled ? 'block' : 'none';
@@ -1220,8 +1411,16 @@
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('listenbrainzEnabled').addEventListener('change', updateListenBrainzVisibility);
             document.getElementById('lastfmEnabled').addEventListener('change', updateLastFmVisibility);
-            document.getElementById('llmEnabled').addEventListener('change', updateLlmVisibility);
-            document.getElementById('llmProvider').addEventListener('change', updateLlmProviderVisibility);
+
+            // Setup wizard toggles
+            const wizLb = document.getElementById('wizardLbEnabled');
+            if (wizLb) wizLb.addEventListener('change', () => {
+                document.getElementById('wizardLbOptions').style.display = wizLb.checked ? 'block' : 'none';
+            });
+            const wizLf = document.getElementById('wizardLfEnabled');
+            if (wizLf) wizLf.addEventListener('change', () => {
+                document.getElementById('wizardLfOptions').style.display = wizLf.checked ? 'block' : 'none';
+            });
         });        // Close modals when clicking outside of them
         window.onclick = function(event) {
             const settingsModal = document.getElementById('settingsModal');
@@ -1244,6 +1443,7 @@
                 toggleBtn.textContent = '▶';
             }
         }
+
 
 async function triggerNavidromeCleanup() {
     const response = await fetch('/api/trigger_navidrome_cleanup', {
@@ -1305,36 +1505,146 @@ async function createSmartPlaylists() {
         const downloadQueue = []; // In-memory queue for display
         let downloadQueueInterval = null;
 
+        // Track which track lists are expanded (persists across re-renders)
+        const expandedItems = new Set();
+
+        function _statusIcon(status, size = 24) {
+            if (status === 'in_progress') return `<div class="spinner" style="width:${size}px;height:${size}px;"></div>`;
+            if (status === 'completed' || status === 'skipped') return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none"><path d="M4 12.6111L8.92308 17.5L20 6.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+            if (status === 'failed') return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+            if (status === 'pending') return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" fill="#666"/></svg>`;
+            return '';
+        }
+
+        function _trackStatusColor(status) {
+            if (status === 'completed') return 'var(--success-color)';
+            if (status === 'skipped') return 'var(--secondary-color)';
+            if (status === 'failed') return 'var(--error-color)';
+            if (status === 'in_progress') return 'var(--info-color)';
+            return '#666';
+        }
+
+        function _escHtml(s) {
+            const d = document.createElement('div');
+            d.textContent = s || '';
+            return d.innerHTML;
+        }
+
+        function toggleTrackList(itemId) {
+            if (expandedItems.has(itemId)) expandedItems.delete(itemId);
+            else expandedItems.add(itemId);
+            updateDownloadQueueUI();
+        }
+
+        function renderPlaylistItem(item) {
+            const tracks = item.tracks || [];
+            const total = item.total_track_count || tracks.length || 0;
+            const dl = item.downloaded_count || 0;
+            const skip = item.skipped_count || 0;
+            const fail = item.failed_count || 0;
+            const processed = dl + skip + fail;
+            const pending = Math.max(0, total - processed);
+            const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
+            const isExpanded = expandedItems.has(item.id);
+
+            // Progress bar color: green if completed, blue if in progress, red if failed
+            let barColor = 'var(--info-color)';
+            if (item.status === 'completed') barColor = 'var(--success-color)';
+            else if (item.status === 'failed') barColor = 'var(--error-color)';
+
+            let trackListHtml = '';
+            if (tracks.length > 0) {
+                trackListHtml = `
+                    <button class="dq-expand-btn" onclick="toggleTrackList('${item.id}')">
+                        ${isExpanded ? '▼ Hide tracks' : '▶ Show tracks (' + tracks.length + ')'}
+                    </button>
+                    <div class="dq-track-list ${isExpanded ? 'open' : ''}" data-item-id="${item.id}">
+                        ${tracks.map(t => `
+                            <div class="dq-track-entry">
+                                <span class="dq-track-status-icon" style="color: ${_trackStatusColor(t.status)}">${_statusIcon(t.status, 14)}</span>
+                                <span class="dq-track-label">${_escHtml(t.artist)} - ${_escHtml(t.title)}</span>
+                                <span class="dq-track-msg">${_escHtml(t.message)}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="download-queue-item ${item.status}">
+                    <div class="download-queue-item-header">
+                        <div class="track-info">
+                            <div class="track-title">${_escHtml(item.title)}</div>
+                            ${item.message ? `<div style="font-size: 0.85em; margin-top: 3px; color: ${item.status === 'failed' ? 'var(--error-color)' : item.status === 'completed' ? 'var(--success-color)' : '#b0b0b0'}">${_escHtml(item.message)}</div>` : ''}
+                        </div>
+                        <div class="status-icon ${item.status}">
+                            ${_statusIcon(item.status)}
+                        </div>
+                    </div>
+                    ${total > 0 ? `
+                        <div class="dq-progress-bar">
+                            <div class="dq-progress-bar-inner" style="width: ${pct}%; background-color: ${barColor};"></div>
+                        </div>
+                        <div class="dq-stats">
+                            ${dl > 0 ? `<span class="dq-stat"><span class="dq-stat-dot downloaded"></span>${dl} downloaded</span>` : ''}
+                            ${skip > 0 ? `<span class="dq-stat"><span class="dq-stat-dot skipped"></span>${skip} in library</span>` : ''}
+                            ${fail > 0 ? `<span class="dq-stat"><span class="dq-stat-dot failed"></span>${fail} failed</span>` : ''}
+                            ${pending > 0 && item.status === 'in_progress' ? `<span class="dq-stat"><span class="dq-stat-dot pending"></span>${pending} remaining</span>` : ''}
+                        </div>
+                    ` : ''}
+                    ${trackListHtml}
+                </div>
+            `;
+        }
+
+        function renderSimpleItem(item) {
+            return `
+                <div class="download-queue-item ${item.status}">
+                    <div class="download-queue-item-header">
+                        <div class="track-info">
+                            <div class="track-title">${_escHtml(item.title)}</div>
+                            <div class="track-artist">${_escHtml(item.artist)}</div>
+                            ${item.message ? `<div style="font-size: 0.85em; margin-top: 3px; color: ${item.status === 'failed' ? 'var(--error-color)' : item.status === 'completed' ? 'var(--success-color)' : '#b0b0b0'}">${_escHtml(item.message)}</div>` : ''}
+                        </div>
+                        <div class="status-icon ${item.status}">
+                            ${_statusIcon(item.status)}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
         function updateDownloadQueueUI() {
             const queueContent = document.getElementById('downloadQueueModalContent');
             if (!queueContent) return;
+
+            // Preserve scroll positions before re-render
+            const mainScroll = queueContent.scrollTop;
+            const trackListScrolls = {};
+            queueContent.querySelectorAll('.dq-track-list').forEach(el => {
+                if (el.scrollTop > 0 && el.dataset.itemId) {
+                    trackListScrolls[el.dataset.itemId] = el.scrollTop;
+                }
+            });
 
             if (downloadQueue.length === 0) {
                 queueContent.innerHTML = '<p style="text-align: center; color: #b0b0b0;">No downloads in queue.</p>';
             } else {
                 queueContent.innerHTML = downloadQueue.map(item => {
-                    let progressText = '';
-                    if (item.current_track_count !== undefined && item.total_track_count !== undefined) {
-                        progressText = `${item.current_track_count}/${item.total_track_count} tracks downloaded`;
+                    if (item.download_type === 'playlist' || (item.tracks && item.tracks.length > 0)) {
+                        return renderPlaylistItem(item);
                     }
-                    return `
-                        <div class="download-queue-item ${item.status}">
-                            <div class="track-info">
-                                <div class="track-title">${item.title}</div>
-                                <div class="track-artist">${item.artist}</div>
-                                ${progressText ? `<div class="progress-text" style="font-size: 0.85em; margin-top: 5px; color: #b0b0b0;">${progressText}</div>` : ''}
-                                ${item.status === 'failed' && item.message ? `<div class="error-message" style="color: var(--error-color); font-size: 0.85em; margin-top: 5px;">Error: ${item.message}</div>` : ''}
-                                ${item.status === 'completed' && item.message ? `<div class="success-message" style="color: var(--success-color); font-size: 0.85em; margin-top: 5px;">${item.message}</div>` : ''}
-                            </div>
-                            <div class="status-icon ${item.status}">
-                                ${item.status === 'in_progress' ? '<div class="spinner"></div>' : ''}
-                                ${item.status === 'completed' ? '<svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 12.6111L8.92308 17.5L20 6.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ''}
-                                ${item.status === 'failed' ? '<svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 9V13M12 15V15.01M22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ''}
-                            </div>
-                        </div>
-                    `;
+                    return renderSimpleItem(item);
                 }).join('');
             }
+
+            // Restore scroll positions after re-render
+            queueContent.scrollTop = mainScroll;
+            queueContent.querySelectorAll('.dq-track-list').forEach(el => {
+                if (el.dataset.itemId && trackListScrolls[el.dataset.itemId]) {
+                    el.scrollTop = trackListScrolls[el.dataset.itemId];
+                }
+            });
         }
 
         async function fetchDownloadQueueStatus() {
@@ -1356,7 +1666,8 @@ async function createSmartPlaylists() {
 
         // Start polling the download queue when the page loads
         document.addEventListener('DOMContentLoaded', () => {
-            downloadQueueInterval = setInterval(fetchDownloadQueueStatus, 5000); // Poll every 5 seconds
+            fetchDownloadQueueStatus(); // Initial fetch immediately
+            downloadQueueInterval = setInterval(fetchDownloadQueueStatus, 3000); // Poll every 3 seconds
         });
 
         function showMessage(type, text) {
@@ -1394,13 +1705,15 @@ async function createSmartPlaylists() {
 
         async function updateCron() {
             const hour = document.getElementById('cronHour').value;
+            const minute = document.getElementById('cronMinute').value;
             const day = document.getElementById('cronDay').value;
-            // Build cron schedule: "0 HOUR * * DAY" (runs at specified hour on specified day every week)
-            const schedule = `0 ${hour} * * ${day}`;
+            const timezone = document.getElementById('cronTimezone').value;
+            // Build cron schedule: "MINUTE HOUR * * DAY"
+            const schedule = `${minute} ${hour} * * ${day}`;
             const response = await fetch('/api/update_cron', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ schedule: schedule })
+                body: JSON.stringify({ schedule: schedule, timezone: timezone })
             });
             const data = await response.json();
             showMessage(data.status, data.message);
@@ -2109,40 +2422,14 @@ async function createSmartPlaylists() {
         }
 
         function populateConfigFields(config) {
-            // Populate form fields
-            document.getElementById('navidromeUrl').value = config.ROOT_ND !== null ? config.ROOT_ND : '';
-            document.getElementById('navidromeUser').value = config.USER_ND !== null ? config.USER_ND : '';
-            document.getElementById('navidromePassword').value = config.PASSWORD_ND !== null ? config.PASSWORD_ND : '';
-            document.getElementById('listenbrainzEnabled').checked = config.LISTENBRAINZ_ENABLED || false;
-            document.getElementById('listenbrainzToken').value = config.TOKEN_LB !== null ? config.TOKEN_LB : '';
-            document.getElementById('listenbrainzUser').value = config.USER_LB !== null ? config.USER_LB : '';
-            document.getElementById('lastfmEnabled').checked = config.LASTFM_ENABLED || false;
-            document.getElementById('lastfmApiKey').value = config.LASTFM_API_KEY !== null ? config.LASTFM_API_KEY : '';
-            document.getElementById('lastfmApiSecret').value = config.LASTFM_API_SECRET !== null ? config.LASTFM_API_SECRET : '';
-            document.getElementById('lastfmUsername').value = config.LASTFM_USERNAME !== null ? config.LASTFM_USERNAME : '';
-            document.getElementById('lastfmPassword').value = config.LASTFM_PASSWORD !== null ? config.LASTFM_PASSWORD : '';
-            document.getElementById('deezerArl').value = config.DEEZER_ARL !== null ? config.DEEZER_ARL : '';
-            document.getElementById('downloadMethod').value = config.DOWNLOAD_METHOD || 'streamrip';
+            // Populate automation fields only (services are now per-user)
             document.getElementById('albumRecommendationEnabled').checked = config.ALBUM_RECOMMENDATION_ENABLED || false;
-            document.getElementById('hideDownloadFromLink').checked = config.HIDE_DOWNLOAD_FROM_LINK || false;
-            document.getElementById('hideFreshReleases').checked = config.HIDE_FRESH_RELEASES || false;
-            document.getElementById('llmEnabled').checked = config.LLM_ENABLED || false;
-            document.getElementById('llmProvider').value = config.LLM_PROVIDER || 'gemini';
-            document.getElementById('llmModelName').value = config.LLM_MODEL_NAME || '';
-            document.getElementById('llmApiKey').value = config.LLM_API_KEY ? '••••••••' : '';
-            document.getElementById('llmBaseUrl').value = config.LLM_BASE_URL || '';
-
 
             // Set global variable for album recommendation setting
             window.albumRecommendationEnabled = config.ALBUM_RECOMMENDATION_ENABLED || false;
 
             // Update UI visibility based on configuration
             updateUIVisibility(config);
-
-            // Update submenu visibility for settings modal
-            updateListenBrainzVisibility();
-            updateLastFmVisibility();
-            updateLlmVisibility();
         }
 
         function updateUIVisibility(config) {
@@ -2207,79 +2494,32 @@ async function createSmartPlaylists() {
             } else {
                 downloadFromLinkSection.style.display = 'none';
             }
-        }
 
-        async function saveConfiguration() {
-            const config = {
-                ROOT_ND: document.getElementById('navidromeUrl').value.trim(),
-                USER_ND: document.getElementById('navidromeUser').value.trim(),
-                PASSWORD_ND: document.getElementById('navidromePassword').value.trim(),
-                LISTENBRAINZ_ENABLED: document.getElementById('listenbrainzEnabled').checked,
-                TOKEN_LB: document.getElementById('listenbrainzToken').value.trim(),
-                USER_LB: document.getElementById('listenbrainzUser').value.trim(),
-                LASTFM_ENABLED: document.getElementById('lastfmEnabled').checked,
-                LASTFM_API_KEY: document.getElementById('lastfmApiKey').value.trim(),
-                LASTFM_API_SECRET: document.getElementById('lastfmApiSecret').value.trim(),
-                LASTFM_USERNAME: document.getElementById('lastfmUsername').value.trim(),
-                LASTFM_PASSWORD: document.getElementById('lastfmPassword').value.trim(),
-                DEEZER_ARL: document.getElementById('deezerArl').value.trim(),
-                DOWNLOAD_METHOD: document.getElementById('downloadMethod').value,
-                ALBUM_RECOMMENDATION_ENABLED: document.getElementById('albumRecommendationEnabled').checked,
-                HIDE_DOWNLOAD_FROM_LINK: document.getElementById('hideDownloadFromLink').checked,
-                HIDE_FRESH_RELEASES: document.getElementById('hideFreshReleases').checked,
-                LLM_ENABLED: document.getElementById('llmEnabled').checked,
-                LLM_PROVIDER: document.getElementById('llmProvider').value,
-                LLM_MODEL_NAME: document.getElementById('llmModelName').value.trim(),
-                LLM_API_KEY: document.getElementById('llmApiKey').value.trim(),
-                LLM_BASE_URL: document.getElementById('llmBaseUrl').value.trim()
-            };
-
-            try {
-                const response = await fetch('/api/update_config', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(config)
-                });
-                const data = await response.json();
-                showMessage(data.status, data.message);
-
-                // Reload configuration to ensure UI shows current values
-                if (data.status === 'success') {
-                    await loadConfiguration();
-                    // Reload the page to apply configuration changes
-                    setTimeout(() => {
-                        location.reload();
-                    }, 1000); // Small delay to let the user see the success message
-                }
-            } catch (error) {
-                console.error('Error saving configuration:', error);
-                showMessage('error', 'Failed to save configuration');
+            // Show "Run Now" button if any recommendation source is enabled
+            const runNowSection = document.getElementById('runNowSection');
+            if (hasListenBrainz || hasLastFm || config.LLM_ENABLED) {
+                runNowSection.style.display = 'block';
+            } else {
+                runNowSection.style.display = 'none';
             }
         }
 
-        function openSettingsModal() {
-            document.getElementById('settingsModal').style.display = 'block';
-            // Load current configuration
-            loadConfiguration();
-        }
-
-
-
         async function saveAutomationOptions() {
             const hour = document.getElementById('cronHour').value;
+            const minute = document.getElementById('cronMinute').value;
             const day = document.getElementById('cronDay').value;
             const disabled = document.getElementById('disableCron').checked;
-            const albumRecommendationEnabled = document.getElementById('albumRecommendationEnabled').checked;
+            const timezone = document.getElementById('cronTimezone').value;
 
-            // Build cron schedule: "0 HOUR * * DAY" (runs at specified hour on specified day every week)
-            const schedule = `0 ${hour} * * ${day}`;
+            // Build cron schedule: "MINUTE HOUR * * DAY"
+            const schedule = `${minute} ${hour} * * ${day}`;
 
             try {
                 // Update cron schedule
                 const cronResponse = await fetch('/api/update_cron', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ schedule: schedule })
+                    body: JSON.stringify({ schedule: schedule, timezone: timezone })
                 });
                 const cronData = await cronResponse.json();
 
@@ -2291,35 +2531,162 @@ async function createSmartPlaylists() {
                 });
                 const disableData = await disableResponse.json();
 
-                // Update album recommendation setting
-                const configResponse = await fetch('/api/update_config', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ALBUM_RECOMMENDATION_ENABLED: albumRecommendationEnabled })
-                });
-                const configData = await configResponse.json();
-
                 // Show success message if all operations succeeded
-                if (cronData.status === 'success' && disableData.status === 'success' && configData.status === 'success') {
+                if (cronData.status === 'success' && disableData.status === 'success') {
                     showMessage('success', 'Automation options saved successfully.');
-                    // Update global variable
-                    window.albumRecommendationEnabled = albumRecommendationEnabled;
-                    // Reload the page to apply automation configuration changes
                     setTimeout(() => {
                         location.reload();
                     }, 1000);
                 } else {
-                    // Show error messages for failed operations
                     const errors = [];
                     if (cronData.status !== 'success') errors.push(`Cron: ${cronData.message}`);
                     if (disableData.status !== 'success') errors.push(`Disable: ${disableData.message}`);
-                    if (configData.status !== 'success') errors.push(`Config: ${configData.message}`);
                     showMessage('error', `Failed to save some automation options: ${errors.join(', ')}`);
                 }
             } catch (error) {
                 console.error('Error saving automation options:', error);
                 showMessage('error', 'Failed to save automation options');
             }
+        }
+
+        async function runNow() {
+            const btn = document.getElementById('runNowBtn');
+            btn.disabled = true;
+            btn.textContent = 'Fetching recommendations...';
+            try {
+                const response = await fetch('/api/run_now', { method: 'POST' });
+                const data = await response.json();
+                showMessage(data.status, data.message);
+                openDownloadQueueModal();
+            } catch (error) {
+                console.error('Error running now:', error);
+                showMessage('error', 'Failed to start recommendation fetch');
+            }
+            btn.disabled = false;
+            btn.textContent = 'Fetch All Recommendations Now';
+        }
+
+        // Detect playlist URLs client-side for immediate UI feedback
+        function _isPlaylistUrl(url) {
+            return /deezer\.com(?:\/[a-z]{2})?\/playlist\/\d+/.test(url) ||
+                   /link\.deezer\.com\/s\/[a-zA-Z0-9]+/.test(url) ||
+                   /open\.spotify\.com\/playlist\/[a-zA-Z0-9]+/.test(url) ||
+                   /(?:listen\.)?tidal\.com\/(?:browse\/)?playlist\/[0-9a-zA-Z-]+/.test(url) ||
+                   /(?:music\.)?youtube\.com\/playlist\?list=[a-zA-Z0-9_-]+/.test(url);
+        }
+
+        // --- Playlist mode popup state ---
+        let _pendingPlaylistLink = '';
+
+        async function _showPlaylistPopup(url) {
+            _pendingPlaylistLink = url;
+            document.getElementById('playlistModeUrl').textContent = url;
+
+            // Reset duplicate section
+            const dupSection = document.getElementById('playlistDuplicateSection');
+            dupSection.style.display = 'none';
+            document.getElementById('playlistRenameInput').style.display = 'none';
+            document.getElementById('playlistRenameInput').value = '';
+            document.querySelectorAll('input[name="playlistDuplicateAction"]').forEach(r => { if (r.value === 'overwrite') r.checked = true; });
+
+            // Call preflight to check for duplicates
+            try {
+                const resp = await fetch('/api/playlist_preflight', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url })
+                });
+                const result = await resp.json();
+                if (result.status === 'success') {
+                    document.getElementById('playlistModeUrl').textContent = `${result.name} (${result.track_count} tracks) — ${url}`;
+                    if (result.exists) {
+                        dupSection.style.display = 'block';
+                        document.getElementById('playlistRenameInput').value = result.name + ' (2)';
+                    }
+                    // Store the original name for later use
+                    dupSection.dataset.originalName = result.name;
+                }
+            } catch (e) {
+                console.error('Preflight error:', e);
+            }
+
+            document.getElementById('playlistIntervalSection').classList.add('open');
+            document.getElementById('playlistModeOverlay').classList.add('open');
+        }
+
+        function _hidePlaylistPopup() {
+            document.getElementById('playlistModeOverlay').classList.remove('open');
+            _pendingPlaylistLink = '';
+            // Reset the download button in case popup was dismissed without submitting
+            const downloadLinkBtn = document.getElementById('downloadLinkBtn');
+            downloadLinkBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
+            downloadLinkBtn.disabled = false;
+        }
+
+        // Close popup on overlay click
+        document.getElementById('playlistModeOverlay').addEventListener('click', function(e) {
+            if (e.target === this) _hidePlaylistPopup();
+        });
+
+        // Toggle rename input visibility based on radio selection
+        document.querySelectorAll('input[name="playlistDuplicateAction"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                document.getElementById('playlistRenameInput').style.display =
+                    this.value === 'rename' ? 'block' : 'none';
+            });
+        });
+
+        async function submitPlaylistDownload(monitor) {
+            const musicLink = _pendingPlaylistLink;
+            if (!musicLink) return;
+
+            const pollInterval = parseInt(document.getElementById('playlistPollInterval').value) || 24;
+
+            showMessage('info', monitor
+                ? 'Playlist download started. It will be monitored for new tracks.'
+                : 'Playlist download started. Check the download queue for progress.');
+            openDownloadQueueModal();
+
+            // Determine playlist name override
+            let playlistName = null;
+            const dupSection = document.getElementById('playlistDuplicateSection');
+            if (dupSection.style.display !== 'none') {
+                const action = document.querySelector('input[name="playlistDuplicateAction"]:checked').value;
+                if (action === 'rename') {
+                    playlistName = document.getElementById('playlistRenameInput').value.trim();
+                    if (!playlistName) {
+                        showMessage('error', 'Please enter a name for the playlist.');
+                        return;
+                    }
+                }
+                // overwrite: playlistName stays null, backend uses original name and overwrites
+            }
+
+            _hidePlaylistPopup();
+
+            try {
+                const body = { link: musicLink, monitor, poll_interval_hours: pollInterval };
+                if (playlistName) body.playlist_name = playlistName;
+                const response = await fetch('/api/download_from_link', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    document.getElementById('musicLinkInput').value = '';
+                    if (monitor) loadMonitoredPlaylists();
+                }
+            } catch (error) {
+                console.error('Error downloading playlist:', error);
+                showMessage('error', 'Failed to initiate playlist download.');
+            }
+
+            const downloadLinkBtn = document.getElementById('downloadLinkBtn');
+            setTimeout(() => {
+                downloadLinkBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
+                downloadLinkBtn.disabled = false;
+            }, 500);
         }
 
         async function downloadFromLink() {
@@ -2331,14 +2698,23 @@ async function createSmartPlaylists() {
                 return;
             }
 
-            // Update button to show loading state
+            const isPlaylist = _isPlaylistUrl(musicLink);
+
+            if (isPlaylist) {
+                // Show popup to choose one-time vs monitor
+                _pendingPlaylistLink = musicLink;
+                downloadLinkBtn.innerHTML = '<div class="spinner"></div>Processing...';
+                downloadLinkBtn.disabled = true;
+                _showPlaylistPopup(musicLink);
+                return;
+            }
+
+            // Non-playlist: download immediately
             const originalContent = downloadLinkBtn.innerHTML;
             downloadLinkBtn.innerHTML = '<div class="spinner"></div>Downloading...';
             downloadLinkBtn.disabled = true;
 
-            // Show immediate feedback message
             showMessage('info', 'Download started...');
-            // Add to client-side queue display immediately
             downloadQueue.push({ artist: 'Link Download', title: musicLink, status: 'in_progress' });
             updateDownloadQueueUI();
 
@@ -2350,11 +2726,13 @@ async function createSmartPlaylists() {
                 });
                 const data = await response.json();
                 showMessage(data.status, data.message);
+                if (data.status === 'success') {
+                    document.getElementById('musicLinkInput').value = '';
+                }
             } catch (error) {
                 console.error('Error downloading from link:', error);
                 showMessage('error', 'Failed to initiate download from link.');
             } finally {
-                // Reset button after a delay
                 setTimeout(() => {
                     downloadLinkBtn.innerHTML = originalContent;
                     downloadLinkBtn.disabled = false;
@@ -2362,8 +2740,166 @@ async function createSmartPlaylists() {
             }
         }
 
+        // --- Monitored Playlists Management ---
+        async function loadMonitoredPlaylists() {
+            const container = document.getElementById('monitoredPlaylistsList');
+            if (!container) return;
+            try {
+                const resp = await fetch('/api/monitored_playlists');
+                const data = await resp.json();
+                if (data.status !== 'success' || !data.playlists.length) {
+                    container.innerHTML = '<p style="color: #666; font-size: 0.9em;">No monitored playlists.</p>';
+                    return;
+                }
+                container.innerHTML = data.playlists.map(p => {
+                    const lastSync = p.last_synced ? new Date(p.last_synced).toLocaleString() : 'Never';
+                    const platform = (p.platform || '').charAt(0).toUpperCase() + (p.platform || '').slice(1);
+                    return `
+                        <div class="mp-item" data-id="${p.id}">
+                            <div class="mp-item-info">
+                                <div class="mp-item-name" title="${_escHtml(p.url)}">${_escHtml(p.name)}</div>
+                                <div class="mp-item-meta">${platform} &middot; ${p.last_track_count || '?'} tracks &middot; Last sync: ${lastSync}</div>
+                            </div>
+                            <div class="mp-item-actions">
+                                <select onchange="updateMonitoredInterval('${p.id}', this.value)" title="Poll interval">
+                                    ${[6,12,24,48,168].map(h =>
+                                        `<option value="${h}" ${p.poll_interval_hours === h ? 'selected' : ''}>${h < 48 ? h + 'h' : h === 48 ? '2d' : '7d'}</option>`
+                                    ).join('')}
+                                </select>
+                                <button class="mp-btn-sync" onclick="syncMonitoredPlaylist('${p.id}')" title="Sync now">Sync</button>
+                                <button class="mp-btn-remove" onclick="removeMonitoredPlaylist('${p.id}')" title="Stop monitoring">&#x2715;</button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (e) {
+                container.innerHTML = '<p style="color: var(--error-color); font-size: 0.9em;">Failed to load.</p>';
+            }
+        }
+
+        async function updateMonitoredInterval(id, hours) {
+            await fetch(`/api/monitored_playlists/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ poll_interval_hours: parseInt(hours) })
+            });
+        }
+
+        async function syncMonitoredPlaylist(id) {
+            const resp = await fetch(`/api/monitored_playlists/${id}/sync`, { method: 'POST' });
+            const data = await resp.json();
+            showMessage(data.status, data.message);
+            openDownloadQueueModal();
+            // Periodically refresh the monitored list to show updated track count / last sync
+            const refreshInterval = setInterval(() => loadMonitoredPlaylists(), 10000);
+            setTimeout(() => clearInterval(refreshInterval), 120000);
+        }
+
+        async function removeMonitoredPlaylist(id) {
+            await fetch(`/api/monitored_playlists/${id}`, { method: 'DELETE' });
+            loadMonitoredPlaylists();
+        }
+
+        // --- User Settings API ---
+        async function saveUserSettings() {
+            const settings = {
+                listenbrainz_enabled: document.getElementById('listenbrainzEnabled').checked,
+                listenbrainz_username: document.getElementById('listenbrainzUser').value.trim(),
+                listenbrainz_token: document.getElementById('listenbrainzToken').value.trim(),
+                lastfm_enabled: document.getElementById('lastfmEnabled').checked,
+                lastfm_username: document.getElementById('lastfmUsername').value.trim(),
+                lastfm_password: document.getElementById('lastfmPassword').value.trim(),
+                lastfm_api_key: document.getElementById('lastfmApiKey').value.trim(),
+                lastfm_api_secret: document.getElementById('lastfmApiSecret').value.trim(),
+            };
+            try {
+                const response = await fetch('/api/user/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(settings)
+                });
+                const data = await response.json();
+                showMessage(data.status, data.message);
+                if (data.status === 'success') {
+                    setTimeout(() => location.reload(), 1000);
+                }
+            } catch (error) {
+                showMessage('error', 'Failed to save settings');
+            }
+        }
+
+        async function loadUserSettings() {
+            try {
+                const response = await fetch('/api/user/settings');
+                const data = await response.json();
+                if (data.status === 'success') {
+                    const s = data.settings;
+                    document.getElementById('listenbrainzEnabled').checked = s.listenbrainz_enabled || false;
+                    document.getElementById('listenbrainzUser').value = s.listenbrainz_username || '';
+                    document.getElementById('listenbrainzToken').value = s.listenbrainz_token || '';
+                    document.getElementById('lastfmEnabled').checked = s.lastfm_enabled || false;
+                    document.getElementById('lastfmUsername').value = s.lastfm_username || '';
+                    document.getElementById('lastfmPassword').value = s.lastfm_password || '';
+                    document.getElementById('lastfmApiKey').value = s.lastfm_api_key || '';
+                    document.getElementById('lastfmApiSecret').value = s.lastfm_api_secret || '';
+                    updateListenBrainzVisibility();
+                    updateLastFmVisibility();
+                }
+            } catch (error) {
+                console.error('Error loading user settings:', error);
+            }
+        }
+
+        // --- Setup Wizard ---
+        async function completeSetupWizard() {
+            const settings = {};
+            if (document.getElementById('wizardLbEnabled').checked) {
+                settings.listenbrainz_enabled = true;
+                settings.listenbrainz_username = document.getElementById('wizardLbUser').value.trim();
+                settings.listenbrainz_token = document.getElementById('wizardLbToken').value.trim();
+            }
+            if (document.getElementById('wizardLfEnabled').checked) {
+                settings.lastfm_enabled = true;
+                settings.lastfm_username = document.getElementById('wizardLfUsername').value.trim();
+                settings.lastfm_password = document.getElementById('wizardLfPassword').value.trim();
+                settings.lastfm_api_key = document.getElementById('wizardLfApiKey').value.trim();
+                settings.lastfm_api_secret = document.getElementById('wizardLfApiSecret').value.trim();
+            }
+            try {
+                if (Object.keys(settings).length > 0) {
+                    await fetch('/api/user/settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(settings)
+                    });
+                }
+                await fetch('/api/user/setup_done', { method: 'POST' });
+                document.getElementById('setupWizard').style.display = 'none';
+                location.reload();
+            } catch (error) {
+                showMessage('error', 'Failed to save setup');
+            }
+        }
+
+        async function skipSetupWizard() {
+            try {
+                await fetch('/api/user/setup_done', { method: 'POST' });
+                document.getElementById('setupWizard').style.display = 'none';
+            } catch (error) {
+                console.error('Error skipping setup:', error);
+            }
+        }
+
+        // PWA Service Worker
+        if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+
         // Auto-load content based on configuration
         window.onload = async function() {
+            // Show setup wizard if first time
+            {% if first_time %}
+            document.getElementById('setupWizard').style.display = 'block';
+            {% endif %}
+
             // Load configuration first to determine what to show
             try {
                 const response = await fetch('/api/config');
@@ -2375,15 +2911,33 @@ async function createSmartPlaylists() {
                 // Update UI visibility
                 updateUIVisibility(config);
 
-                // Delayed this call slightly to ensure other UI elements are responsive first
-                if (config.LISTENBRAINZ_ENABLED) {
+                // Fresh releases hidden by default
+                {% if hide_fresh_releases %}
+                document.getElementById('freshReleasesSection').style.display = 'none';
+                {% else %}
+                if (config.LISTENBRAINZ_ENABLED && !config.HIDE_FRESH_RELEASES) {
                     setTimeout(fetchFreshReleases, 100);
                 }
+                {% endif %}
             } catch (error) {
                 console.error('Error loading initial configuration:', error);
-                // Show welcome message as fallback
                 document.getElementById('welcomeMessage').style.display = 'block';
             }
+
+            // PWA share target: auto-submit shared URL
+            {% if pending_share_url %}
+            const sharedUrl = {{ pending_share_url | tojson }};
+            if (sharedUrl) {
+                const linkInput = document.getElementById('musicLinkInput');
+                if (linkInput) {
+                    linkInput.value = sharedUrl;
+                    // Scroll the download section into view
+                    linkInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    // Small delay to let UI settle, then trigger download
+                    setTimeout(() => downloadFromLink(), 500);
+                }
+            }
+            {% endif %}
         };
     </script>
 </body>

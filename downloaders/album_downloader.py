@@ -4,7 +4,7 @@ import asyncio
 from streamrip.client import DeezerClient
 from streamrip.media import Album, PendingAlbum
 from streamrip.config import Config
-from streamrip.db import Database, Downloads, Failed
+from streamrip.db import Database, Downloads, Failed, Dummy
 from tqdm import tqdm
 import sys
 import importlib
@@ -272,7 +272,8 @@ class AlbumDownloader:
             print(f"Streamrip: Album ID: {album_id}")
 
             print("Streamrip: Setting up database...")
-            rip_db = Database(downloads=Downloads("/app/temp_downloads/downloads.db"), failed=Failed("/app/temp_downloads/failed_downloads.db"))
+            # Use Dummy DB so streamrip never skips previously-seen tracks
+            rip_db = Database(downloads=Dummy(), failed=Dummy())
 
             print("Streamrip: Creating pending album...")
             pending_album = PendingAlbum(id=album_id, client=client, config=streamrip_config, db=rip_db)

@@ -1,329 +1,227 @@
-# re-command: Automated Music Recommendation System for Navidrome
+# TrackDrop
 
 <p align="center">
-  <img src="web_ui/assets/logo.svg" width="200" alt="Re-command Logo">
+  <img src="web_ui/assets/logo.svg" width="200" alt="TrackDrop Logo">
 </p>
 
-`re-command` is a modern, containerized music recommendation and automation system that enhances your Navidrome music experience. It automatically discovers and downloads music recommendations from [ListenBrainz](https://listenbrainz.org) and [Last.fm](https://www.last.fm) using [Streamrip](https://github.com/nathom/streamrip) or [Deemix](https://deemix.org/), then organizes and tags them in your music library.
+A modern, containerized music discovery and download system for Navidrome. TrackDrop automatically discovers and downloads music recommendations from [ListenBrainz](https://listenbrainz.org), [Last.fm](https://www.last.fm), and AI-powered LLM suggestions using [Streamrip](https://github.com/nathom/streamrip) or [Deemix](https://deemix.org/), then organizes and tags them in your music library.
+
+## Credits
+
+TrackDrop is a fork of [re-command](https://github.com/Snapyou2/re-command) by Snapyou2. This project extends the original with significant new features and improvements.
+
+### Features Added in This Release
+
+- **iOS Shortcuts Integration** - Quick download links from iOS via the Shortcuts app with secure API key authentication
+- **PWA Share Target** - Share music links directly from Android apps to TrackDrop via the installed Progressive Web App
+- **YouTube Link Downloads** - Automatic YouTube audio fallback when tracks aren't found on streaming services, with oEmbed title parsing
+- **Album-Aware Duplicate Detection** - Smarter duplicate checking that considers artist, title, AND album to avoid false positives
+- **Spotify Metadata Verification** - Validates Songlink results against Spotify metadata before downloading
+- **Per-User Download Queue** - Each user sees only their own downloads, sorted by most recent first
+- **Real-Time Track Display** - Shows track names and progress in the download queue instead of generic messages
+- **Mobile-Optimized Login** - Responsive login page that works perfectly on phones without scrolling
+- **First-Time Setup Wizard** - Guided setup for new users including mobile app integration instructions
+- **Configurable Timezone** - Per-user cron schedules with timezone support (default: Monday midnight US/Eastern)
 
 ## Key Features
 
-*   **Multi-Source Recommendations:** Fetches music recommendations playlists from ListenBrainz, Last.fm, and LLM-powered suggestions (gemini/openrouter/llama.cpp). Includes a built-in cron scheduling for weekly automated downloads
-*   **Dual Download Methods:** Supports both modern Streamrip v2 and legacy Deemix for downloading from Deezer
-*   **Fresh Releases Discovery:** Automatically shows newly released albums from ListenBrainz with a quick download button
-*   **Universal Link Downloads:** Download music straight to your sever with Spotify, YouTube, Deezer, and other platforms links using Songlink API integration (still in beta)
-*   **Track Previews & Feedback:** Preview tracks before downloading and submit feedback manually to ListenBrainz/Last.fm
-*   **Dynamic Playlist Support:** Downloaded tracks are tagged with configurable comment markers for dynamic playlists
-*   **Automated Library Maintenance:** Removes tracks from previous recommendations and submit scrobbling feedbacks based on your Navidrome ratings
-*   **Containerized Deployment:** Full Docker support with automated setup and configuration
+### Core Features
+- **Multi-Source Recommendations** - Automatically fetch weekly recommendations from ListenBrainz, Last.fm, or LLM-powered suggestions
+- **Lossless Downloads** - Download FLAC quality music via Streamrip (Deezer) or Deemix
+- **Smart Organization** - Automatic Artist/Album folder structure with full metadata tagging
+- **Navidrome Integration** - Seamless integration with Navidrome's Subsonic API for playlist management
+- **Web UI** - Modern, responsive web interface for configuration and monitoring
 
-## Table of Contents
+### Download & Link Sharing
+- **Universal Link Downloads** - Share music links from Spotify, Deezer, Tidal, YouTube, Apple Music, SoundCloud, and more
+- **Playlist Downloads** - Download entire playlists from Spotify, Deezer, Tidal, and YouTube
+- **PWA Share Target** - Share links directly from Android apps to TrackDrop
+- **iOS Shortcuts Integration** - Quick download from iOS with API key authentication
+- **YouTube Fallback** - Automatic YouTube audio download when tracks aren't found on streaming services
+- **Songlink/Odesli Integration** - Automatic cross-platform link resolution
 
-- [Prerequisites](#prerequisites)
-- [Quick Start with Docker Compose](#quick-start-with-docker-compose)
-- [Alternative: Quick Start with Docker (Script)](#alternative-quick-start-with-docker-script)
-- [Screenshots](#screenshots)
-- [Usage Modes](#usage-modes)
-- [Local Development Setup (non-dockerized)](#local-development-setup-non-dockerized)
-- [Manual Configuration](#manual-configuration)
-- [LLM Model Comparison](#llm-model-comparison)
-- [Advanced Configuration](#advanced-configuration)
-- [Troubleshooting](#troubleshooting)
-- [Contributing / Roadmap](#contributing--roadmap)
+### Smart Duplicate Detection
+- **Album-Aware Matching** - Prevents downloading duplicate tracks by checking artist, title, AND album
+- **Multi-Source Verification** - Verifies Songlink results against Spotify metadata before downloading
+- **Navidrome Library Check** - Searches existing library before downloading to avoid duplicates
 
-## Prerequisites
+### User Experience
+- **Per-User Download Queue** - Each user sees only their own downloads, sorted by most recent
+- **Track Progress Display** - Real-time progress with track names and status for playlist downloads
+- **Mobile-Optimized Interface** - Responsive design that works great on phones and tablets
+- **First-Time Setup Wizard** - Guided setup for new users including mobile app integration
+- **Multi-User Support** - Per-user settings, schedules, and download history
 
-- [Docker](https://www.docker.com/get-started) and [Docker Compose](https://docs.docker.com/compose/) installed
-- A running [Navidrome](https://www.navidrome.org/) instance
-- [Deezer](https://www.deezer.com/) account with ARL token
-- A [ListenBrainz](https://listenbrainz.org/) account for ListenBrainz recommendations, fresh releases and LLM playlists
+### Playlist Management
+- **API Playlist Mode** - Manage playlists via Navidrome's Subsonic API
+- **Tags Mode** - Legacy smart playlists via metadata comments
+- **Playlist Monitoring** - Auto-sync external playlists on a schedule
+- **Rating-Based Cleanup** - Automatically remove low-rated tracks, keep favorites
 
-Optional
-- A [Last.fm API account](https://www.last.fm/api/account/create) for Last.fm recommendations
-- A LLM API key or base URL for llama.cpp 
+### Scheduling & Automation
+- **Per-User Cron Schedules** - Each user can set their own weekly recommendation schedule
+- **Timezone Support** - Set schedules in your local timezone (default: Monday midnight US/Eastern)
+- **Automatic Library Scans** - Trigger Navidrome library scans after downloads
 
-## Quick Start with Docker Compose Image
+## Quick Start
 
-### 1. Download only the docker.yml 
+### Docker Compose (Recommended)
 
+1. Download the docker-compose.yml:
 ```bash
-wget https://raw.githubusercontent.com/Snapyou2/re-command/refs/heads/main/docker/docker-compose.yml
-
+wget https://raw.githubusercontent.com/B1naryShad0w/trackdrop/main/docker/docker-compose.yml
 ```
 
-Edit the file and set at least the volumes to your Navidrome music library path. Replace the whole "{MUSIC_PATH:-../music}" with the full library path.
-It should look like this:
-```
-    volumes:
-      - /home/snapyou2/Music:/app/music
-      - /home/snapyou2/Music/.tempfolder:/app/temp_downloads
+2. Edit the file and set at least the volumes to your Navidrome music library path:
+```yaml
+volumes:
+  - /path/to/your/music:/app/music
+  - /path/to/your/music/.tempfolder:/app/temp_downloads
+  - ./data:/app/data
 ```
 
-### 2. Start the Application
+3. Create a `.env` file with your configuration:
+```env
+# Navidrome settings (can also be configured via web UI)
+TRACKDROP_ROOT_ND=http://your-navidrome-server:4533
+TRACKDROP_USER_ND=your_username
+TRACKDROP_PASSWORD_ND=your_password
 
+# Deezer ARL for downloads
+TRACKDROP_DEEZER_ARL=your_deezer_arl
+
+# Optional: ListenBrainz
+TRACKDROP_LISTENBRAINZ_ENABLED=true
+TRACKDROP_TOKEN_LB=your_listenbrainz_token
+TRACKDROP_USER_LB=your_listenbrainz_username
+
+# Optional: Last.fm
+TRACKDROP_LASTFM_ENABLED=true
+TRACKDROP_LASTFM_USERNAME=your_lastfm_username
+TRACKDROP_LASTFM_API_KEY=your_api_key
+TRACKDROP_LASTFM_API_SECRET=your_api_secret
+
+# Optional: Spotify (for playlist extraction)
+TRACKDROP_SPOTIFY_CLIENT_ID=your_spotify_client_id
+TRACKDROP_SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
+```
+
+4. Start the container:
 ```bash
 docker compose up -d
 ```
 
-### 3. Access the Web Interface
+5. Access the web UI at `http://localhost:5000` and log in with your Navidrome credentials.
 
-Open `http://localhost:5000` in your browser. Configure Navidrome access, playlist providers, and Deezer ARL in the settings. You can also click the "Create Smart Playlists" after you configured everything and then trigger a rescan of your Navidrome library.
+## Configuration
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `TRACKDROP_ROOT_ND` | Navidrome server URL |
+| `TRACKDROP_USER_ND` | Navidrome username |
+| `TRACKDROP_PASSWORD_ND` | Navidrome password |
+| `TRACKDROP_DEEZER_ARL` | Deezer ARL token for downloads |
+| `TRACKDROP_DOWNLOAD_METHOD` | `streamrip` (default) or `deemix` |
+| `TRACKDROP_LISTENBRAINZ_ENABLED` | Enable ListenBrainz recommendations |
+| `TRACKDROP_TOKEN_LB` | ListenBrainz API token |
+| `TRACKDROP_USER_LB` | ListenBrainz username |
+| `TRACKDROP_LASTFM_ENABLED` | Enable Last.fm recommendations |
+| `TRACKDROP_LASTFM_USERNAME` | Last.fm username |
+| `TRACKDROP_LASTFM_API_KEY` | Last.fm API key |
+| `TRACKDROP_LASTFM_API_SECRET` | Last.fm API secret |
+| `TRACKDROP_LASTFM_SESSION_KEY` | Last.fm session key |
+| `TRACKDROP_LLM_ENABLED` | Enable LLM-powered recommendations |
+| `TRACKDROP_LLM_PROVIDER` | LLM provider: `gemini`, `openrouter`, or `llama` |
+| `TRACKDROP_LLM_API_KEY` | LLM API key |
+| `TRACKDROP_LLM_MODEL_NAME` | LLM model name |
+| `TRACKDROP_SPOTIFY_CLIENT_ID` | Spotify Client ID (for playlist extraction) |
+| `TRACKDROP_SPOTIFY_CLIENT_SECRET` | Spotify Client Secret |
+| `TRACKDROP_PLAYLIST_MODE` | `tags` (metadata) or `api` (Subsonic API playlists) |
+| `TRACKDROP_ADMIN_USER` | Admin username for library scans |
+| `TRACKDROP_ADMIN_PASSWORD` | Admin password for library scans |
+| `TRACKDROP_NAVIDROME_DB_PATH` | Path to Navidrome's database (read-only, for rating checks) |
+| `TRACKDROP_SECRET_KEY` | Flask session secret key (auto-generated if not set) |
+
+### Playlist Mode
+
+**Tags Mode (default):** Creates smart playlists via metadata comments. Navidrome automatically creates playlists based on comment tags.
+
+**API Mode:** Manages playlists directly via Navidrome's Subsonic API. Set `TRACKDROP_PLAYLIST_MODE=api` to enable.
+
+### LLM Recommendations
+
+TrackDrop supports AI-powered music recommendations. Recommended providers:
+- **Gemini** - Free tier available, excellent results with `gemini-2.5-flash`
+- **OpenRouter** - Access to various models including free options
+- **Llama** - Self-hosted local LLM support
+
+## Mobile Integration
+
+### Android (PWA Share Target)
+
+1. Open TrackDrop in Chrome/Edge
+2. Tap the menu and select "Install app" or "Add to Home screen"
+3. Share any music link from apps like Spotify, YouTube, etc. and select TrackDrop
+
+### iOS (Shortcuts)
+
+1. Go to Settings > Mobile Apps in TrackDrop
+2. Generate an API key
+3. Follow the instructions to set up the iOS Shortcut
+4. Share any music link and select the TrackDrop shortcut
+
+## CLI Usage
+
+```bash
+# Download recommendations from all enabled sources
+python trackdrop.py
+
+# Download from specific source
+python trackdrop.py --source listenbrainz
+python trackdrop.py --source lastfm
+python trackdrop.py --source llm
+
+# Download fresh releases albums
+python trackdrop.py --source fresh_releases
+
+# Run cleanup (process ratings and delete low-rated tracks)
+python trackdrop.py --cleanup
+
+# Bypass playlist change check (force download)
+python trackdrop.py --bypass-playlist-check
+
+# Specify user for per-user history tracking
+python trackdrop.py --user myusername
+```
 
 ## Screenshots
 
 ![Web Interface](web_ui/assets/screenshot.jpg)
-
 ![Sources](web_ui/assets/sources.jpg)
-
 ![Playlist View](web_ui/assets/playlist.jpg)
-
 ![Settings](web_ui/assets/settings.jpg)
-
-## Usage Modes
-
-### 1. Automated Weekly Downloads
-
-Runs automatically every Tuesday at 00:00 (configurable) via cron job. The process runs in two phases:
-
-**Phase 1: Library Cleanup & Feedback**
-- Scans your Navidrome library for tracks with recommendation comments
-- **1 star**: Sends negative feedback and deletes the track
-- **2-3 stars**: Deletes the track (no feedback)
-- **4 stars**: Keeps the track and removes the recommendations comment (no feedback, but out of your dynamic playlist)
-- **5 stars**: Sends positive feedback, keeps the track and removes the recommendation comment
-- Feedback is submitted to ListenBrainz and Last.fm based on your ratings
-
-**Phase 2: Download New Recommendations**
-- Fetches new recommendations from ListenBrainz, Last.fm and/or LLM playlists (based on what is enabled)
-- Downloads and tags new tracks using Streamrip or Deemix
-- Organizes downloaded music into path/artist/album/track
-
-### 2. Fresh Releases Discovery
-
-Discovery of newly released albums:
-- Fetches from ListenBrainz fresh releases API each time you load the web page
-- Displays last 10 albums with album art
-- Allows selective downloading (only for one week if set up in the settings)
-- Organizes into music library
-
-### 3. Link Downloads
-
-Download music from any supported platform:
-- Paste a music link from your favorite music app and get them downloaded on your server using Songlink API. Links supported by service :
-  - Spotify : tracks/albums
-  - Deezer : tracks/albums
-  - Apple music : tracks/albums
-  - Tidal : tracks/albums
-  - Youtube Music : tracks/some playlists
-  - Amazon Music : very experimental
-
-### 4. Individual Track Downloads from Recommendation Playlists
-
-Via web interface:
-- Preview tracks before downloading (30-second previews)
-- Download individual tracks from recommendations
-- Submit manual like/dislike feedback to the playlist provider (defaults to ListenBrainz for LLM playlists)
-
-### 5. Library Maintenance
-
-Cleans up your music library based on ratings (done automatically with the cron job but can be manually triggered in the settings):
-- Automatically removes tracks rated 3 stars or below
-- Submits feedback to ListenBrainz for disliked tracks
-- Clears recommendation tags from highly rated tracks
-
-### 6. Manual Control
-
-Via web interface or command line:
-```bash
-# Download only ListenBrainz recommendations
-python re-command.py --source listenbrainz
-
-# Download only Last.fm recommendations
-python re-command.py --source lastfm
-
-# Download only LLM recommendations
-python re-command.py --source llm
-
-# Download all available fresh releases
-python re-command.py --source fresh_releases
-
-# Run library cleanup based on ratings
-python re-command.py --cleanup
-
-# Bypass playlist change detection for Listenbrainz (redownload a playlist previously downloaded)
-python re-command.py --bypass-playlist-check
-```
-
-## Local Development Setup (non-dockerized)
-
-### Prerequisites
-
-- Python 3.11+
-- Git
-- Navidrome server (local or remote)
-- Deezer ARL token
-
-### 1. Clone the Repository
-
-```bash
-git clone <repository_url>
-cd re-command
-```
-
-### 2. Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Configure Environment
-
-Edit the configuration file:
-
-```bash
-nano config.py
-```
-
-### 4. Run the Application
-
-**Command Line Interface:**
-```bash
-python re-command.py
-```
-
-**Web Interface:**
-```bash
-python web_ui/app.py
-```
-
-Then open `http://localhost:5000` in your browser.
-
-## Manual Configuration
-
-### Environment Variables (Docker)
-
-| Variable | Description |
-|----------|-------------|
-| `RECOMMAND_ROOT_ND` | Navidrome server URL |
-| `RECOMMAND_USER_ND` | Navidrome username |
-| `RECOMMAND_PASSWORD_ND` | Navidrome password |
-| `RECOMMAND_DEEZER_ARL` | Deezer ARL token |
-| `RECOMMAND_LISTENBRAINZ_ENABLED` | Enable ListenBrainz |
-| `RECOMMAND_TOKEN_LB` | ListenBrainz API token |
-| `RECOMMAND_USER_LB` | ListenBrainz username |
-| `RECOMMAND_LASTFM_ENABLED` | Enable Last.fm |
-| `RECOMMAND_LASTFM_USERNAME` | Last.fm username |
-| `RECOMMAND_LASTFM_PASSWORD` | Last.fm password |
-| `RECOMMAND_LASTFM_API_KEY` | Last.fm API key |
-| `RECOMMAND_LASTFM_API_SECRET` | Last.fm API secret |
-| `RECOMMAND_LLM_ENABLED` | Enable LLM suggestions |
-| `RECOMMAND_LLM_PROVIDER` | LLM provider (gemini/openrouter/llama) |
-| `RECOMMAND_LLM_API_KEY` | LLM API key |
-| `RECOMMAND_LLM_MODEL_NAME` | LLM model name |
-
-### Configuration File (Local)
-
-Open the config.py and fill it with the proper information.
-
-### API Endpoints
-
-The web interface exposes RESTful APIs:
-
-- `GET /api/config` - Get current configuration
-- `POST /api/update_config` - Update configuration settings
-- `POST /api/update_arl` - Update Deezer ARL token
-- `POST /api/update_cron` - Update scheduling
-- `POST /api/toggle_cron` - Enable/disable automatic downloads
-- `GET /api/get_listenbrainz_playlist` - Get ListenBrainz recommendations
-- `POST /api/trigger_listenbrainz_download` - Trigger ListenBrainz playlist download
-- `GET /api/get_lastfm_playlist` - Get Last.fm recommendations
-- `POST /api/trigger_lastfm_download` - Trigger Last.fm playlist download
-- `GET /api/get_llm_playlist` - Get LLM-powered recommendations
-- `POST /api/trigger_llm_download` - Trigger LLM playlist download
-- `GET /api/get_fresh_releases` - Get fresh releases
-- `POST /api/trigger_fresh_release_download` - Download specific release
-- `POST /api/trigger_navidrome_cleanup` - Run library cleanup
-- `POST /api/submit_listenbrainz_feedback` - Submit feedback for ListenBrainz tracks
-- `POST /api/submit_lastfm_feedback` - Submit feedback for Last.fm tracks
-- `GET /api/get_track_preview` - Get track preview URL
-- `POST /api/trigger_track_download` - Download individual track
-- `POST /api/download_from_link` - Download from universal music links
-- `GET /api/get_deezer_album_art` - Get album art from Deezer
-
-## LLM Model Comparison
-
-re-command supports various Large Language Models for music recommendations. From experience, gemini-2.5-flash remains the best available free model amongst external APIs recommendations options. Here is a performance comparison of free OpenRouter models I tested for music discovery:
-
-### Best to Worst Performance:
-
-| Model | Response Time | Originality | Song Finding Reliability | Notes |
-|-------|---------------|-------------|---------------------------|-------|
-| **tngtech/deepseek-r1t2-chimera:free** | 1.9 min | 8/10 | 7/10 | Excellent creativity, good at finding songs |
-| **google/gemma-3-27b-it:free** | 1.4 min | 7/10 | 8/10 | Fast, reliable song discovery |
-| **meta-llama/llama-3.3-70b-instruct:free** | 1.5 min | 5/10 | 8/10 | Very reliable, but less creative |
-| **z-ai/glm-4.5-air:free** | 2.7 min | 6/10 | 7/10 | Decent but slow |
-| **amazon/nova-2-lite-v1:free** | 1.3 min | 7/10 | 5/10 | Fast but misses some songs |
-| **mistralai/mistral-small-3.1-24b-instruct:free** | 1.2 min | 4/10 | 5/10 | Fastest but least creative |
-| **qwen/qwen3-235b-a22b:free** | 3 min | 4/10 | 7/10 | Slow but reliable |
-| **arcee-ai/trinity-mini:free** | 1.2 min | 3/10 | 5/10 | Fast but poor performance |
-| **openai/gpt-oss-20b:free** | Failed | - | - | Not working |
-| **moonshotai/kimi-k2:free** | Failed | - | - | Not working |
-| **openai/gpt-oss-120b:free** | Failed | - | - | Not working |
-| **allenai/olmo-3-32b-think:free** | Failed | - | - | Not working |
-
-
-## Advanced Configuration
-
-### Custom Download Quality
-If you have a Deezer Premium account, you can get better mp3 quality.
-
-Edit the Streamrip configuration in Docker:
-```bash
-docker exec -it re-command bash
-# Edit /root/.config/streamrip/config.toml
-```
-
-Or edit the Deemix config if you are using it:
-```bash
-docker exec -it re-command bash
-# Edit /root/.config/deemix/config.json
-```
 
 ## Troubleshooting
 
-### Quick Fixes
+### Common Issues
 
-**Container Won't Start:**
-- Check all required environment variables are set
-- Verify Navidrome server is accessible
-
-**Downloads Failing:**
-- Verify ARL token is fresh (not expired)
-- Check Deezer account status (free accounts limited to 128kbps)
-- Ensure sufficient disk space
-
-**Web Interface Not Loading:**
-- Check port 5000 is not in use
-- Verify container is running: `docker ps`
-- Check logs: `docker logs re-command`
-
-**Navidrome Integration Issues:**
-- Verify server URL and credentials
-- Check Navidrome version (v0.49.0+ recommended)
-- Ensure music library path is writable
+- **Deezer downloads failing:** Check that your ARL is valid and not expired
+- **Navidrome connection errors:** Verify the server URL and credentials
+- **Library scan not working:** Ensure admin credentials are configured for API mode
+- **Tracks not appearing in playlists:** Wait for the library scan to complete
 
 ### Logs
 
-Please add the docker logs when creating an issue:
-
 ```bash
-# View container logs
-docker logs -f re-command-container
+docker logs trackdrop
 ```
 
-## Contributing / Roadmap
+## License
 
-Contributions are welcome! Areas for improvement:
+MIT License - See LICENSE file for details.
 
-- Really looking forward sharing links to an Android re-command PWA (I tried and failed many times so PRs are welcomed!)
-- Adding Tidal as a streamrip option to get higher resolution downloads (quite unstable for now)
+## Contributing
+
+Contributions are welcome! Please open an issue or submit a pull request.

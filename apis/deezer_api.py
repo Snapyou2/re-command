@@ -69,13 +69,16 @@ class DeezerAPI:
                     raise
         return None
 
-    async def get_deezer_track_link(self, artist, title):
+    async def get_deezer_track_link(self, artist, title, album=None):
         """
         Searches for a track on Deezer and returns the track link.
+        When album is provided, prefers the result from the matching album
+        to avoid pulling the wrong version (e.g. remaster vs original).
 
         Args:
             artist: The artist name.
             title: The track title.
+            album: Optional album name to prefer the correct version.
 
         Returns:
             The Deezer track link if found, otherwise None.
@@ -89,14 +92,33 @@ class DeezerAPI:
             f'{artist} {title}' # Broad search without specific field tags
         ]
 
+        # If album is provided, also try album-specific queries first
+        if album:
+            cleaned_album = self._clean_title(album)
+            search_queries = [
+                f'artist:"{artist}" track:"{cleaned_title}" album:"{album}"',
+                f'artist:"{artist}" track:"{cleaned_title}" album:"{cleaned_album}"',
+            ] + search_queries
+
         for query in search_queries:
             params = {"q": query}
             try:
                 response = await self._make_request_with_retries(self.search_url, params=params)
                 if response:
                     data = response.json()
-                    if data.get('data') and len(data['data']) > 0:
-                        return data['data'][0]['link']
+                    results = data.get('data', [])
+                    if not results:
+                        continue
+
+                    # If we have an album hint, prefer the result from that album
+                    if album and len(results) > 1:
+                        album_lower = album.lower().strip()
+                        for result in results:
+                            result_album = result.get('album', {}).get('title', '').lower().strip()
+                            if result_album == album_lower:
+                                return result['link']
+
+                    return results[0]['link']
             except Exception as e:
                 print(f"Error during Deezer search with query '{query}': {e}")
         return None
@@ -119,10 +141,26 @@ class DeezerAPI:
 
                 if data and data.get("album") and data["album"].get("title"):
                     album_cover = data["album"].get("cover_xl", data["album"].get("cover_big", data["album"].get("cover_medium", data["album"].get("cover", None))))
+
+                    # Extract individual artist names from contributors
+                    contributors = data.get("contributors", [])
+                    if contributors:
+                        artist_list = [c.get("name", "") for c in contributors if c.get("name")]
+                    else:
+                        artist_list = [data.get("artist", {}).get("name", "")]
+
+                    # Album artist: fetch from the album's own artist info if possible,
+                    # otherwise use the track's primary artist
+                    album_id = data["album"].get("id")
+                    album_artist = data.get("artist", {}).get("name", artist_list[0] if artist_list else "")
+
                     return {
                         "album": data["album"]["title"],
                         "release_date": data.get("release_date"),
-                        "album_art": album_cover
+                        "album_art": album_cover,
+                        "artists": artist_list,
+                        "album_artist": album_artist,
+                        "title": data.get("title", ""),
                     }
                 else:
                     print(f"Album information not found for track ID {track_id}")

@@ -133,7 +133,7 @@ class ListenBrainzAPI:
     async def get_recording_mbid_from_track(self, artist, title):
         """Fetches recording MBID from MusicBrainz using artist and title."""
         headers = {
-            'User-Agent': 'Re-command/1.0 ( https://github.com/z-a-f/re-command )'
+            'User-Agent': 'TrackDrop/1.0'
         }
         url = f"https://musicbrainz.org/ws/2/recording/?query=artist:\"{artist}\" AND recording:\"{title}\"&fmt=json"
         try:
@@ -145,11 +145,51 @@ class ListenBrainzAPI:
             )
             data = response.json()
             if data.get("recordings") and len(data["recordings"]) > 0:
-                # Recordings are sorted by score descending, so the first is likely the best match.
                 return data["recordings"][0].get("id")
         except Exception as e:
             print(f"Error getting MBID for {artist} - {title}: {e}", file=sys.stderr)
         return None
+
+    async def get_artist_mbids_from_recording(self, recording_mbid):
+        """Fetches artist MBIDs from a recording MBID via MusicBrainz API.
+        Returns a list of artist MBID strings, or empty list on failure."""
+        headers = {
+            'User-Agent': 'TrackDrop/1.0'
+        }
+        url = f"https://musicbrainz.org/ws/2/recording/{recording_mbid}?fmt=json&inc=artist-credits"
+        try:
+            response = await self._make_request_with_retries(
+                method="GET",
+                url=url,
+                headers=headers,
+                retry_delay=2
+            )
+            data = response.json()
+            artist_mbids = []
+            for credit in data.get("artist-credit", []):
+                artist_obj = credit.get("artist", {})
+                if artist_obj.get("id"):
+                    artist_mbids.append(artist_obj["id"])
+            return artist_mbids
+        except Exception as e:
+            print(f"Error getting artist MBIDs for recording {recording_mbid}: {e}", file=sys.stderr)
+        return []
+
+    async def lookup_mbids(self, artist, title, recording_mbid=None):
+        """Look up recording MBID and artist MBIDs for a track.
+        If recording_mbid is already known, skips the search step.
+        Returns (recording_mbid, artist_mbids_list). Respects MusicBrainz rate limit (1 req/sec)."""
+        import asyncio
+        if not recording_mbid:
+            recording_mbid = await self.get_recording_mbid_from_track(artist, title)
+            await asyncio.sleep(1.1)  # MusicBrainz rate limit
+
+        artist_mbids = []
+        if recording_mbid:
+            artist_mbids = await self.get_artist_mbids_from_recording(recording_mbid)
+            await asyncio.sleep(1.1)  # MusicBrainz rate limit
+
+        return recording_mbid, artist_mbids
 
     async def get_track_info(self, recording_mbid):
         """Fetches track information from MusicBrainz asynchronously."""

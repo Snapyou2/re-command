@@ -2,6 +2,6 @@ __pycache__
 apis/__pycache__
 downloaders/__pycache__
 web_ui/__pycache__
-docker/run_recommand_auto.sh
+docker/run_trackdrop_auto.sh
 docker/.env
 roadmap.md

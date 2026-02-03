@@ -7,7 +7,7 @@ import json # For pretty printing JSON in debug
 from streamrip.client import DeezerClient
 from streamrip.media import PendingSingle, PendingAlbum, PendingPlaylist
 from streamrip.config import Config
-from streamrip.db import Database, Downloads, Failed
+from streamrip.db import Database, Downloads, Failed, Dummy
 from config import *
 from utils import Tagger, sanitize_filename, update_status_file
 from apis.navidrome_api import NavidromeAPI
@@ -24,22 +24,11 @@ class LinkDownloader:
         self.track_downloader = TrackDownloader(tagger)
         self.streamrip_config = Config("/root/.config/streamrip/config.toml")
         self.deezer_client = DeezerClient(config=self.streamrip_config)
-        self.rip_db = Database(downloads=Downloads("/app/temp_downloads/downloads.db"), failed=Failed("/app/temp_downloads/failed_downloads.db"))
+        # Use Dummy DB so streamrip never skips previously-seen tracks
+        self.rip_db = Database(downloads=Dummy(), failed=Dummy())
         self.songlink_base_url = "https://api.song.link/v1-alpha.1"
 
     async def download_from_url(self, url: str, lb_recommendation: bool = False, download_id: Optional[str] = None):
-        print(f"Attempting to download from URL: {url}")
-
-        # Debug logging
-        debug_info = {
-            'url': url,
-            'lb_recommendation': lb_recommendation,
-            'download_id': download_id,
-            'timestamp': __import__('datetime').datetime.now().isoformat()
-        }
-        with open('/app/debug.log', 'a') as f:
-            f.write(f"LINK_DOWNLOADER_START: {debug_info}\n")
-
         # Regex for supported platforms
         spotify_track_re = r"open\.spotify\.com\/track\/([a-zA-Z0-9]+)"
         spotify_album_re = r"open\.spotify\.com\/album\/([a-zA-Z0-9]+)"
@@ -58,6 +47,7 @@ class LinkDownloader:
         amazon_album_re = r"music\.amazon\.[a-z]{2,3}\/albums\/([A-Z0-9]+)"
 
         downloaded_files = []
+        resolved_title = None  # Track title for queue display
 
         try:
             song_info = None
@@ -69,22 +59,44 @@ class LinkDownloader:
                 track_id = re.search(spotify_track_re, url).group(1)
                 original_platform = "spotify"
                 original_id = track_id
+                print(f"  Resolving Deezer ID via Songlink...")
                 deezer_id = await self._get_deezer_id_from_songlink(track_id, "spotify", "song")
+                # Verify album matches; if not, search Deezer directly with correct album
                 if deezer_id:
+                    spotify_meta = self._get_spotify_track_metadata(track_id)
+                    if spotify_meta and spotify_meta.get('album'):
+                        deezer_details = await self.deezer_api.get_deezer_track_details(deezer_id)
+                        if deezer_details:
+                            deezer_album = (deezer_details.get("album") or "").lower().strip()
+                            source_album = spotify_meta["album"].lower().strip()
+                            if deezer_album != source_album and source_album not in deezer_album and deezer_album not in source_album:
+                                print(f"  Album mismatch: Deezer has '{deezer_details.get('album')}', Spotify has '{spotify_meta['album']}'")
+                                print(f"  Searching Deezer for correct album version...")
+                                better_link = await self.deezer_api.get_deezer_track_link(
+                                    spotify_meta['artist'], spotify_meta['title'], album=spotify_meta['album'])
+                                if better_link:
+                                    match = re.search(r'deezer\.com\/track\/(\d+)', better_link)
+                                    if match:
+                                        deezer_id = match.group(1)
+                                        print(f"  Found correct version: Deezer ID {deezer_id}")
+                if deezer_id:
+                    print(f"  Deezer ID: {deezer_id}")
                     song_info = {'deezer_id': deezer_id, 'type': 'track'}
                 else:
-                    print(f"Could not find Deezer ID for Spotify track {track_id}", file=sys.stderr)
+                    print(f"  Could not find Deezer ID for Spotify track {track_id}", file=sys.stderr)
                     return []
             elif re.search(spotify_album_re, url):
                 print("Detected Spotify Album.")
                 album_id = re.search(spotify_album_re, url).group(1)
                 original_platform = "spotify"
                 original_id = album_id
+                print(f"  Resolving Deezer ID via Songlink...")
                 deezer_id = await self._get_deezer_id_from_songlink(album_id, "spotify", "album")
                 if deezer_id:
+                    print(f"  Deezer ID: {deezer_id}")
                     song_info = {'deezer_id': deezer_id, 'type': 'album'}
                 else:
-                    print(f"Could not find Deezer ID for Spotify album {album_id}", file=sys.stderr)
+                    print(f"  Could not find Deezer ID for Spotify album {album_id}", file=sys.stderr)
                     return []
             elif re.search(spotify_playlist_re, url):
                 print("Detected Spotify Playlist.")
@@ -189,9 +201,48 @@ class LinkDownloader:
                 platform = "youtubeMusic" if "music.youtube.com" in url else "youtube"
                 original_platform = platform
                 original_id = video_id
-                deezer_id = await self._get_deezer_id_from_songlink(video_id, platform)
+                # Use Songlink URL-based lookup (most reliable for YouTube)
+                deezer_id = await self._get_deezer_id_from_songlink_url(url)
+                youtube_meta = None  # Store for queue display
+                # Fallback: use video title to search Deezer
+                if not deezer_id:
+                    try:
+                        oembed_resp = requests.get(
+                            f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json",
+                            timeout=10)
+                        if oembed_resp.status_code == 200:
+                            oembed_data = oembed_resp.json()
+                            yt_title = oembed_data.get("title", "")
+                            yt_author = oembed_data.get("author_name", "")
+                            if yt_title:
+                                # Try "artist - title" split if title contains " - "
+                                if " - " in yt_title:
+                                    parts = yt_title.split(" - ", 1)
+                                    search_artist, search_title = parts[0].strip(), parts[1].strip()
+                                else:
+                                    search_artist, search_title = yt_author, yt_title
+                                # Clean common YouTube suffixes
+                                # Remove parenthetical/bracketed tags like (Official Music Video), [Official Audio], etc.
+                                search_title = re.sub(r'\s*[\(\[][^)\]]*(?:official|music video|lyric|lyrics|visualizer|audio|video|hd|4k)[^)\]]*[\)\]]', '', search_title, flags=re.IGNORECASE).strip()
+                                # Remove ft./feat. clauses
+                                search_title = re.sub(r'\s*(ft\.?|feat\.?)\s+.*$', '', search_title, flags=re.IGNORECASE).strip()
+                                deezer_link = await self.deezer_api.get_deezer_track_link(search_artist, search_title)
+                                if deezer_link:
+                                    match = re.search(r'deezer\.com\/track\/(\d+)', deezer_link)
+                                    if match:
+                                        deezer_id = match.group(1)
+                                        youtube_meta = {'artist': search_artist, 'title': search_title}
+                    except Exception as e:
+                        print(f"  YouTube oEmbed fallback failed: {e}", file=sys.stderr)
                 if deezer_id:
+                    print(f"  Deezer ID: {deezer_id}")
                     song_info = {'deezer_id': deezer_id, 'type': 'track'}
+                    # Update queue with YouTube metadata if we got it from oEmbed
+                    if youtube_meta:
+                        resolved_title = f"{youtube_meta['artist']} - {youtube_meta['title']}"
+                        update_status_file(download_id, "in_progress",
+                                           f"Downloading: {resolved_title}",
+                                           title=resolved_title)
                 else:
                     print(f"Could not find Deezer ID for YouTube video {video_id}", file=sys.stderr)
                     return []
@@ -269,76 +320,134 @@ class LinkDownloader:
                 print(f"Could not get song info for {url}", file=sys.stderr)
                 return []
 
-            # Download using streamrip for all Deezer IDs
-            print(f"DEBUG: Attempting Deezer client login...", file=sys.stderr)
-            await self.deezer_client.login()
-            print(f"DEBUG: Deezer client login complete.", file=sys.stderr)
-            
+            # --- Duplicate detection ---
+            salt, token = self.navidrome_api._get_navidrome_auth_params()
             media_type = song_info['type']
+
             if media_type == "track":
-                print(f"DEBUG: Creating PendingSingle for Deezer ID: {song_info['deezer_id']}", file=sys.stderr)
+                print(f"  Fetching Deezer track details for duplicate check...")
+                deezer_details = await self.deezer_api.get_deezer_track_details(song_info['deezer_id'])
+                if deezer_details:
+                    search_artist = deezer_details.get("album_artist") or (deezer_details.get("artists", [None])[0])
+                    search_title = deezer_details.get("title")
+                    search_album = deezer_details.get("album")
+                    print(f"  Deezer metadata: {search_artist} - {search_title} [{search_album}]")
+                    # Update queue with resolved track name
+                    resolved_title = f"{search_artist} - {search_title}"
+                    update_status_file(download_id, "in_progress", f"Downloading: {resolved_title}",
+                                       title=resolved_title)
+                    if search_artist and search_title:
+                        print(f"  Checking Navidrome for existing match...")
+                        existing = self.navidrome_api._search_song_in_navidrome(search_artist, search_title, salt, token, album=search_album)
+                        if existing:
+                            matched_album = existing.get('album', '?')
+                            print(f"  Already in Navidrome: {search_artist} - {search_title} [{matched_album}] (id={existing['id']})")
+                            update_status_file(download_id, "completed", f"Already in library: {search_artist} - {search_title}",
+                                               title=f"{search_artist} - {search_title}")
+                            return []
+                        print(f"  Not found in library, proceeding with download.")
+
+            elif media_type == "album":
+                # Get album tracklist from Deezer and check which tracks already exist
+                album_resp = await self.deezer_api._make_request_with_retries(f"https://api.deezer.com/album/{song_info['deezer_id']}/tracks")
+                if album_resp and album_resp.status_code == 200:
+                    album_tracks = album_resp.json().get("data", [])
+                    if album_tracks:
+                        all_exist = True
+                        for t in album_tracks:
+                            t_artist = t.get("artist", {}).get("name", "")
+                            t_title = t.get("title", "")
+                            if t_artist and t_title:
+                                if not self.navidrome_api._search_song_in_navidrome(t_artist, t_title, salt, token):
+                                    all_exist = False
+                                    break
+                            else:
+                                all_exist = False
+                                break
+                        if all_exist:
+                            print(f"  All {len(album_tracks)} album tracks already in Navidrome, skipping download.")
+                            update_status_file(download_id, "completed", f"Album already in library ({len(album_tracks)} tracks).")
+                            return []
+
+            # Download using streamrip for all Deezer IDs
+            print(f"  Logging into Deezer...")
+            await self.deezer_client.login()
+
+            media_type = song_info['type']
+            print(f"  Preparing streamrip {media_type} download (Deezer ID: {song_info['deezer_id']})...")
+            if media_type == "track":
                 pending = PendingSingle(id=song_info['deezer_id'], client=self.deezer_client, config=self.streamrip_config, db=self.rip_db)
             elif media_type == "album":
-                print(f"DEBUG: Creating PendingAlbum for Deezer ID: {song_info['deezer_id']}", file=sys.stderr)
                 pending = PendingAlbum(id=song_info['deezer_id'], client=self.deezer_client, config=self.streamrip_config, db=self.rip_db)
             elif media_type == "playlist":
-                print(f"DEBUG: Creating PendingPlaylist for Deezer ID: {song_info['deezer_id']}", file=sys.stderr)
                 pending = PendingPlaylist(id=song_info['deezer_id'], client=self.deezer_client, config=self.streamrip_config, db=self.rip_db)
 
-            print(f"DEBUG: Attempting to resolve media for Deezer ID: {song_info['deezer_id']} of type: {media_type}", file=sys.stderr)
             media = None
             try:
+                print(f"  Resolving media...")
                 media = await pending.resolve()
-                print(f"DEBUG: Result of pending.resolve() for Deezer ID {song_info['deezer_id']}: {media}", file=sys.stderr)
             except Exception as e:
-                print(f"DEBUG: Streamrip Pending media resolution failed for Deezer ID {song_info['deezer_id']} with error: {e}", file=sys.stderr)
-                import traceback
-                traceback.print_exc(file=sys.stderr)
+                print(f"  Streamrip resolution failed for Deezer ID {song_info['deezer_id']}: {e}", file=sys.stderr)
                 media = None
 
             if media:
-                print(f"DEBUG: Media resolved successfully for Deezer ID: {song_info['deezer_id']}", file=sys.stderr)
+                if hasattr(media, 'meta'):
+                    meta = media.meta
+                    print(f"  Downloading: {getattr(meta, 'artist', '?')} - {getattr(meta, 'title', '?')} [{getattr(meta, 'album', '?')}]")
+                # Snapshot files before rip so we can find new ones after
+                files_before = self._snapshot_audio_files()
                 await media.rip()
-                if media_type == "track":
-                    artist = media.meta.artist if hasattr(media.meta, 'artist') else ''
-                    title = media.meta.title if hasattr(media.meta, 'title') else ''
-                    downloaded_files.extend(self._find_downloaded_files(artist, title))
-                elif media_type == "album":
-                    artist = media.meta.albumartist if hasattr(media.meta, 'albumartist') else ''
-                    album_title = media.meta.album if hasattr(media.meta, 'album') else ''
-                    downloaded_files.extend(self._find_downloaded_files_for_album(artist, album_title))
-                elif media_type == "playlist":
-                    playlist_name = getattr(media, 'name', '')
-                    playlist_files = self._find_downloaded_files_for_playlist(playlist_name)
-                    downloaded_files.extend(playlist_files)
+                print(f"  Streamrip download complete.")
+                files_after = self._snapshot_audio_files()
+                # Detect files that are new or were modified (overwritten in place)
+                new_files = []
+                for fp, (mtime, size) in files_after.items():
+                    before = files_before.get(fp)
+                    if before is None or before != (mtime, size):
+                        new_files.append(fp)
+                # Also use media.download_path as authoritative if it exists
+                if not new_files and hasattr(media, 'download_path') and media.download_path:
+                    dp = str(media.download_path)
+                    if os.path.exists(dp):
+                        new_files = [dp]
 
+                print(f"  Found {len(new_files)} new/modified file(s) after download.")
+                if new_files:
+                    for f in new_files:
+                        print(f"    -> {f}")
+                    downloaded_files.extend(new_files)
+                else:
+                    print(f"  No new files detected via snapshot, trying fallback...")
+                    # Fallback: try the old name-based matching
+                    if media_type == "track":
+                        artist = media.meta.artist if hasattr(media.meta, 'artist') else ''
+                        title = media.meta.title if hasattr(media.meta, 'title') else ''
+                        downloaded_files.extend(self._find_downloaded_files(artist, title))
+                    elif media_type == "album":
+                        artist = media.meta.albumartist if hasattr(media.meta, 'albumartist') else ''
+                        album_title = media.meta.album if hasattr(media.meta, 'album') else ''
+                        downloaded_files.extend(self._find_downloaded_files_for_album(artist, album_title))
+
+                if media_type == "playlist":
                     # If this is a ListenBrainz recommendation, retag the files with the correct comment
                     if lb_recommendation:
-                        print(f"Post-processing playlist files for ListenBrainz recommendation tagging...")
-                        for file_path in playlist_files:
+                        for file_path in new_files or downloaded_files:
                             if file_path and os.path.exists(file_path):
-                                print(f"Retagging {file_path} with lb_recommendation comment")
                                 self.tagger.add_comment_to_file(file_path, self.tagger.target_comment)
             else:
-                # If streamrip's resolution failed for a track, use the TrackDownloader fallback.
+                # Streamrip resolution failed — try TrackDownloader (deemix) as fallback
                 if media_type == "track":
-                    print(f"DEBUG: Streamrip PendingSingle resolution failed for Deezer ID {song_info['deezer_id']}. Attempting fallback via TrackDownloader (deemix)...", file=sys.stderr)
-                    # Prepare song_info for TrackDownloader.
                     full_song_info = {
                         'deezer_id': song_info['deezer_id'],
-                        'artist': '',
-                        'title': '',
-                        'album': '',
-                        'release_date': '',
-                        'recording_mbid': '', # Not typically available from Deezer API directly for track ID
-                        'source': 'Deezer',
-                        'album_art': ''
+                        'artist': '', 'title': '', 'album': '',
+                        'release_date': '', 'recording_mbid': '',
+                        'source': 'Deezer', 'album_art': ''
                     }
 
-                    # Attempt to get artist/title/album details from Deezer API using the Deezer ID
-                    deezer_track_full_details_response = await self.deezer_api._make_request_with_retries(f"{self.deezer_api.track_url_base}{song_info['deezer_id']}")
-                    if deezer_track_full_details_response and deezer_track_full_details_response.status_code == 200:
-                        track_data = deezer_track_full_details_response.json()
+                    # Get metadata from Deezer API
+                    deezer_resp = await self.deezer_api._make_request_with_retries(f"{self.deezer_api.track_url_base}{song_info['deezer_id']}")
+                    if deezer_resp and deezer_resp.status_code == 200:
+                        track_data = deezer_resp.json()
                         full_song_info['artist'] = track_data.get('artist', {}).get('name', '')
                         full_song_info['title'] = track_data.get('title', '')
                         if track_data.get('album'):
@@ -346,45 +455,25 @@ class LinkDownloader:
                             full_song_info['release_date'] = track_data['album'].get('release_date', '')
                             if track_data['album'].get('cover_xl'):
                                 full_song_info['album_art'] = track_data['album']['cover_xl']
-                        print(f"DEBUG: Enriched song info from Deezer API for TrackDownloader fallback: {full_song_info}", file=sys.stderr)
-                    else:
-                        print(f"DEBUG: Could not get full song details from Deezer API for ID {song_info['deezer_id']} for TrackDownloader fallback.", file=sys.stderr)
-                    
-                    # If still w/o artist or title, try Songlink
+
+                    # Fallback to Songlink for metadata if Deezer didn't have it
                     if not full_song_info.get('artist') and original_platform and original_id:
                         songlink_metadata = self._get_media_metadata_from_songlink(original_id, original_platform, "song")
                         if songlink_metadata:
                             full_song_info['artist'] = songlink_metadata.get('artist', '')
                             full_song_info['title'] = songlink_metadata.get('title', '')
                             full_song_info['source'] = original_platform.capitalize()
-                            print(f"DEBUG: Enriched song info from Songlink for TrackDownloader fallback: {full_song_info}", file=sys.stderr)
-                        else:
-                            print(f"DEBUG: Could not get artist/title from Songlink for {original_platform} ID {original_id} for TrackDownloader fallback.", file=sys.stderr)
 
                     if full_song_info.get('artist') and full_song_info.get('title'):
                         downloaded_track_path = await self.track_downloader.download_track(full_song_info, lb_recommendation=lb_recommendation)
                         if downloaded_track_path:
-                            print(f"DEBUG: TrackDownloader fallback successful. Downloaded: {downloaded_track_path}", file=sys.stderr)
                             downloaded_files.append(downloaded_track_path)
-                            # Avoiding "Failed to resolve media" message
                             media = True
-                        else:
-                            print(f"DEBUG: TrackDownloader fallback failed for Deezer ID {song_info['deezer_id']}.", file=sys.stderr)
-                    else:
-                        print(f"DEBUG: Not enough information (artist/title) to perform TrackDownloader fallback for Deezer ID {song_info['deezer_id']}.", file=sys.stderr)
-                
-                elif media_type == "album":
-                    print(f"DEBUG: Streamrip PendingAlbum resolution failed for Deezer ID {song_info['deezer_id']}. Attempting track-by-track fallback...", file=sys.stderr)
-                    album_deezer_id = song_info['deezer_id']
 
-                    # Getting album metadata from Deezer API directly
-                    album_metadata_response = await self.deezer_api._make_request_with_retries(f"https://api.deezer.com/album/{album_deezer_id}")
-                    album_data = None
-                    if album_metadata_response and album_metadata_response.status_code == 200:
-                        album_data = album_metadata_response.json()
-                        print(f"DEBUG: Fetched album metadata for ID {album_deezer_id}: {album_data.get('title')}", file=sys.stderr)
-                    else:
-                        print(f"DEBUG: Failed to fetch album metadata for ID {album_deezer_id} from Deezer API.", file=sys.stderr)
+                elif media_type == "album":
+                    album_deezer_id = song_info['deezer_id']
+                    album_resp = await self.deezer_api._make_request_with_retries(f"https://api.deezer.com/album/{album_deezer_id}")
+                    album_data = album_resp.json() if album_resp and album_resp.status_code == 200 else None
 
                     if album_data:
                         album_title = album_data.get('title', 'Unknown Album')
@@ -392,19 +481,13 @@ class LinkDownloader:
                         album_release_date = album_data.get('release_date', '')
                         album_art = album_data.get('cover_xl', '')
 
-                        # Attempt to get tracklist via search if direct album tracks endpoint failed
                         tracks_data = await self.deezer_api.get_deezer_album_tracklist_by_search(album_artist, album_title)
                         if tracks_data:
-                            print(f"DEBUG: Found {len(tracks_data)} tracks for album '{album_title}' by '{album_artist}' via search. Downloading track by track...", file=sys.stderr)
                             for track_item in tracks_data:
-                                track_artist = track_item.get('artist', album_artist)
-                                track_title = track_item.get('title', 'Unknown Track')
-                                track_deezer_id = str(track_item.get('id', ''))
-
                                 full_song_info = {
-                                    'deezer_id': track_deezer_id,
-                                    'artist': track_artist,
-                                    'title': track_title,
+                                    'deezer_id': str(track_item.get('id', '')),
+                                    'artist': track_item.get('artist', album_artist),
+                                    'title': track_item.get('title', 'Unknown Track'),
                                     'album': album_title,
                                     'release_date': album_release_date,
                                     'recording_mbid': '',
@@ -413,22 +496,12 @@ class LinkDownloader:
                                 }
                                 downloaded_track_path = await self.track_downloader.download_track(full_song_info, lb_recommendation=lb_recommendation)
                                 if downloaded_track_path:
-                                    print(f"DEBUG: TrackDownloader fallback successful for track '{track_title}'. Downloaded: {downloaded_track_path}", file=sys.stderr)
                                     downloaded_files.append(downloaded_track_path)
-                                else:
-                                    print(f"DEBUG: TrackDownloader fallback failed for track '{track_title}'.", file=sys.stderr)
-
                             if downloaded_files:
                                 media = True
-                            else:
-                                print(f"DEBUG: No files downloaded for album {album_deezer_id} during track-by-track fallback.", file=sys.stderr)
-                        else:
-                            print(f"DEBUG: Failed to get tracks data for album ID {album_deezer_id} for track-by-track fallback.", file=sys.stderr)
-                    else:
-                        print(f"DEBUG: Failed to retrieve album data for ID {album_deezer_id}.", file=sys.stderr)
-                
+
                 if not media:
-                    print(f"DEBUG: Failed to resolve media for Deezer ID {song_info['deezer_id']} after all attempts (including all fallbacks).", file=sys.stderr)
+                    print(f"Failed to download Deezer ID {song_info['deezer_id']} after all fallback attempts.", file=sys.stderr)
                     return []
 
             # After downloading, organize files
@@ -436,7 +509,10 @@ class LinkDownloader:
                 print("Organizing downloaded files...")
                 self.navidrome_api.organize_music_files(self.temp_download_folder, self.music_library_path)
                 print(f"Successfully downloaded and organized {len(downloaded_files)} files from {url}")
-                update_status_file(download_id, "completed", f"Downloaded {len(downloaded_files)} files.")
+                if resolved_title:
+                    update_status_file(download_id, "completed", f"Downloaded: {resolved_title}", title=resolved_title)
+                else:
+                    update_status_file(download_id, "completed", f"Downloaded {len(downloaded_files)} files.")
                 return downloaded_files
             else:
                 print(f"No files were downloaded from {url}", file=sys.stderr)
@@ -462,7 +538,6 @@ class LinkDownloader:
             response = requests.get(songlink_url)
             if response.status_code == 200:
                 data = response.json()
-                print(f"Songlink API response data keys: {list(data.keys())}")
                 entities = data.get('entitiesByUniqueId', {})
                 for entity_key, entity in entities.items():
                     if entity.get('id') == item_id and entity.get('type') == type_param:
@@ -474,7 +549,6 @@ class LinkDownloader:
                             'source': platform,
                             'thumbnailUrl': entity.get('thumbnailUrl', '')
                         }
-                        print(f"Found {type_param} info: {metadata}")
                         return metadata
                 print(f"No {type_param} entity found for {platform} ID {item_id}", file=sys.stderr)
             else:
@@ -486,78 +560,106 @@ class LinkDownloader:
             traceback.print_exc(file=sys.stderr)
             return None
 
-    async def _get_deezer_id_from_songlink(self, item_id, platform, type_param="song"):
-        """Use Songlink API to get Deezer ID from other platform ID, with improved fallback."""        
+    def _get_spotify_track_metadata(self, track_id):
+        """Fetch artist, title, and album name from Spotify for a track ID."""
         try:
-            url = f"{self.songlink_base_url}/links?platform={platform}&type={type_param}&id={item_id}"
-            print(f"Calling Songlink API: {url}")
-            response = requests.get(url)
-            print(f"Songlink API response status: {response.status_code}")
+            from downloaders.playlist_downloader import _get_spotify_client_token
+            token = _get_spotify_client_token()
+            if not token:
+                return None
+            resp = requests.get(
+                f"https://api.spotify.com/v1/tracks/{track_id}",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=10
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                artist = ", ".join(a["name"] for a in data.get("artists", []))
+                title = data.get("name", "")
+                album = data.get("album", {}).get("name", "")
+                return {"artist": artist, "title": title, "album": album}
+        except Exception as e:
+            print(f"  Could not fetch Spotify metadata: {e}", file=sys.stderr)
+        return None
+
+    async def _get_deezer_id_from_songlink_url(self, source_url):
+        """Use Songlink API with a full URL to get Deezer ID. More reliable than platform+id for YouTube."""
+        try:
+            api_url = f"{self.songlink_base_url}/links?url={requests.utils.quote(source_url, safe='')}"
+            response = requests.get(api_url, timeout=15)
             if response.status_code == 200:
                 data = response.json()
-                # Full stderr response
-                print(f"===== SONGLINK API RESPONSE DEBUG =====", file=sys.stderr)
-                print(f"URL: {url}", file=sys.stderr)
-                print(f"Platform: {platform}, ID: {item_id}, Type: {type_param}", file=sys.stderr)
-                print(f"Status: {response.status_code}", file=sys.stderr)
-                print(f"Response data keys: {list(data.keys())}", file=sys.stderr)
-                print(f"Full response JSON:", file=sys.stderr)
-                import json
-                print(json.dumps(data, indent=2), file=sys.stderr)
-                print(f"Available platforms: {list(data.get('linksByPlatform', {}).keys()) if 'linksByPlatform' in data else 'None'}", file=sys.stderr)
-                print(f"========================================", file=sys.stderr)
-                
                 deezer_info = data.get('linksByPlatform', {}).get('deezer')
                 if deezer_info and deezer_info.get('url'):
                     deezer_url = deezer_info['url']
-                    print(f"Found Deezer URL: {deezer_url}")
                     match = re.search(r'deezer\.com\/(?:track|album|playlist)\/(\d+)', deezer_url)
                     if match:
-                        deezer_id = match.group(1)
-                        print(f"Extracted Deezer ID: {deezer_id}")
-                        return deezer_id
-                    else:
-                        print(f"Could not extract ID from Deezer URL: {deezer_url}", file=sys.stderr)
-                
-                # If no Deezer link found on Songlink, attempt direct Deezer API search
-                if type_param == "album" or type_param == "song":
+                        return match.group(1)
+        except Exception as e:
+            print(f"  Songlink URL lookup failed: {e}", file=sys.stderr)
+        return None
+
+    async def _get_deezer_id_from_songlink(self, item_id, platform, type_param="song"):
+        """Use Songlink API to get Deezer ID from other platform ID, with improved fallback."""
+        try:
+            url = f"{self.songlink_base_url}/links?platform={platform}&type={type_param}&id={item_id}"
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.json()
+
+                deezer_info = data.get('linksByPlatform', {}).get('deezer')
+                if deezer_info and deezer_info.get('url'):
+                    deezer_url = deezer_info['url']
+                    match = re.search(r'deezer\.com\/(?:track|album|playlist)\/(\d+)', deezer_url)
+                    if match:
+                        return match.group(1)
+                    print(f"Could not extract ID from Deezer URL: {deezer_url}", file=sys.stderr)
+
+                # If no Deezer link found, attempt direct Deezer API search via metadata
+                if type_param in ("album", "song"):
                     media_metadata = self._get_media_metadata_from_songlink(item_id, platform, type_param)
                     if media_metadata:
                         if type_param == "album":
                             artist = media_metadata.get('artist', '')
                             album_title = media_metadata.get('album', '')
                             if artist and album_title:
-                                print(f"Attempting direct Deezer album search for artist: '{artist}', album: '{album_title}'", file=sys.stderr)
                                 deezer_album_link = await self.deezer_api.get_deezer_album_link(artist, album_title)
                                 if deezer_album_link:
                                     match = re.search(r'deezer\.com\/album\/(\d+)', deezer_album_link)
                                     if match:
-                                        deezer_id = match.group(1)
-                                        print(f"Found Deezer ID via direct album search: {deezer_id}", file=sys.stderr)
-                                        return deezer_id
+                                        return match.group(1)
                         elif type_param == "song":
                             artist = media_metadata.get('artist', '')
                             title = media_metadata.get('title', '')
                             if artist and title:
-                                print(f"Attempting direct Deezer track search for artist: '{artist}', title: '{title}'", file=sys.stderr)
                                 deezer_track_link = await self.deezer_api.get_deezer_track_link(artist, title)
                                 if deezer_track_link:
                                     match = re.search(r'deezer\.com\/track\/(\d+)', deezer_track_link)
                                     if match:
-                                        deezer_id = match.group(1)
-                                        print(f"Found Deezer ID via direct track search: {deezer_id}", file=sys.stderr)
-                                        return deezer_id
+                                        return match.group(1)
 
-                print(f"No Deezer link found in response for {platform} ID {item_id}, and direct Deezer search also failed for type {type_param}", file=sys.stderr)
+                print(f"No Deezer ID found for {platform} {type_param} {item_id}", file=sys.stderr)
             else:
-                print(f"Songlink API request failed with status {response.status_code}: {response.text}", file=sys.stderr)
-            print(f"Failed to get Deezer ID from Songlink API for {platform} ID {item_id}", file=sys.stderr)
+                print(f"Songlink API failed ({response.status_code}) for {platform} {type_param} {item_id}", file=sys.stderr)
             return None
         except Exception as e:
-            print(f"Error calling Songlink API or direct Deezer search: {e}", file=sys.stderr)
-            import traceback
-            traceback.print_exc(file=sys.stderr)
+            print(f"Error resolving Deezer ID via Songlink for {platform} {type_param} {item_id}: {e}", file=sys.stderr)
             return None
+    def _snapshot_audio_files(self):
+        """Return a dict of audio file path -> (mtime, size) in the temp download folder."""
+        audio_extensions = (".mp3", ".flac", ".m4a", ".aac", ".ogg", ".wma")
+        files = {}
+        for root, _, filenames in os.walk(self.temp_download_folder):
+            for f in filenames:
+                if f.endswith(audio_extensions):
+                    fp = os.path.join(root, f)
+                    try:
+                        st = os.stat(fp)
+                        files[fp] = (st.st_mtime, st.st_size)
+                    except OSError:
+                        pass
+        return files
+
     def _find_downloaded_files(self, artist, title):
         """Helper to find a single downloaded file based on artist and title."""
         sanitized_artist = sanitize_filename(artist).lower()

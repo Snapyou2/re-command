@@ -1,62 +1,83 @@
 services:
-  re-command:
-    image: ghcr.io/snapyou2/re-command:latest
-    container_name: re-command-container
+  trackdrop:
+    image: ghcr.io/b1naryshad0w/trackdrop:latest
+    container_name: trackdrop
     ports:
       - "5000:5000"
     volumes:
       - ${MUSIC_PATH:-/home/user/Music}:/app/music
       - ${MUSIC_PATH:-/home/user/Music}/.tempfolder:/app/temp_downloads
+      - ${DATA_PATH:-./data}:/app/data
+      - ${NAVIDROME_DATA_PATH:-/dev/null}:/app/navidrome_data:ro
     environment:
       # Navidrome Configuration (empty defaults, configure via web UI)
-      - RECOMMAND_ROOT_ND=${RECOMMAND_ROOT_ND:-}
-      - RECOMMAND_USER_ND=${RECOMMAND_USER_ND:-}
-      - RECOMMAND_PASSWORD_ND=${RECOMMAND_PASSWORD_ND:-}
+      - TRACKDROP_ROOT_ND=${TRACKDROP_ROOT_ND:-}
+      - TRACKDROP_USER_ND=${TRACKDROP_USER_ND:-}
+      - TRACKDROP_PASSWORD_ND=${TRACKDROP_PASSWORD_ND:-}
 
       # ListenBrainz Configuration (disabled by default)
-      - RECOMMAND_LISTENBRAINZ_ENABLED=${RECOMMAND_LISTENBRAINZ_ENABLED:-False}
-      - RECOMMAND_TOKEN_LB=${RECOMMAND_TOKEN_LB:-}
-      - RECOMMAND_USER_LB=${RECOMMAND_USER_LB:-}
+      - TRACKDROP_LISTENBRAINZ_ENABLED=${TRACKDROP_LISTENBRAINZ_ENABLED:-False}
+      - TRACKDROP_TOKEN_LB=${TRACKDROP_TOKEN_LB:-}
+      - TRACKDROP_USER_LB=${TRACKDROP_USER_LB:-}
 
       # Last.fm Configuration (disabled by default)
-      - RECOMMAND_LASTFM_ENABLED=${RECOMMAND_LASTFM_ENABLED:-False}
-      - RECOMMAND_LASTFM_API_KEY=${RECOMMAND_LASTFM_API_KEY:-}
-      - RECOMMAND_LASTFM_API_SECRET=${RECOMMAND_LASTFM_API_SECRET:-}
-      - RECOMMAND_LASTFM_USERNAME=${RECOMMAND_LASTFM_USERNAME:-}
-      - RECOMMAND_LASTFM_SESSION_KEY=${RECOMMAND_LASTFM_SESSION_KEY:-}
+      - TRACKDROP_LASTFM_ENABLED=${TRACKDROP_LASTFM_ENABLED:-False}
+      - TRACKDROP_LASTFM_API_KEY=${TRACKDROP_LASTFM_API_KEY:-}
+      - TRACKDROP_LASTFM_API_SECRET=${TRACKDROP_LASTFM_API_SECRET:-}
+      - TRACKDROP_LASTFM_USERNAME=${TRACKDROP_LASTFM_USERNAME:-}
+      - TRACKDROP_LASTFM_SESSION_KEY=${TRACKDROP_LASTFM_SESSION_KEY:-}
 
       # LLM Configuration (disabled by default)
-      - RECOMMAND_LLM_ENABLED=${RECOMMAND_LLM_ENABLED:-False}
-      - RECOMMAND_LLM_PROVIDER=${RECOMMAND_LLM_PROVIDER:-}
-      - RECOMMAND_LLM_API_KEY=${RECOMMAND_LLM_API_KEY:-}
-      - RECOMMAND_LLM_MODEL_NAME=${RECOMMAND_LLM_MODEL_NAME:-}
-      - RECOMMAND_LLM_BASE_URL=${RECOMMAND_LLM_BASE_URL:-}
+      - TRACKDROP_LLM_ENABLED=${TRACKDROP_LLM_ENABLED:-False}
+      - TRACKDROP_LLM_PROVIDER=${TRACKDROP_LLM_PROVIDER:-}
+      - TRACKDROP_LLM_API_KEY=${TRACKDROP_LLM_API_KEY:-}
+      - TRACKDROP_LLM_MODEL_NAME=${TRACKDROP_LLM_MODEL_NAME:-}
+      - TRACKDROP_LLM_BASE_URL=${TRACKDROP_LLM_BASE_URL:-}
+
+      # Spotify API Configuration (for playlist extraction - free, no user login)
+      - TRACKDROP_SPOTIFY_CLIENT_ID=${TRACKDROP_SPOTIFY_CLIENT_ID:-}
+      - TRACKDROP_SPOTIFY_CLIENT_SECRET=${TRACKDROP_SPOTIFY_CLIENT_SECRET:-}
 
       # Deezer Configuration (empty, configurable via web UI)
-      - RECOMMAND_DEEZER_ARL=${RECOMMAND_DEEZER_ARL:-}
+      - TRACKDROP_DEEZER_ARL=${TRACKDROP_DEEZER_ARL:-}
 
       # Download Method (default to streamrip)
-      - RECOMMAND_DOWNLOAD_METHOD=${RECOMMAND_DOWNLOAD_METHOD:-streamrip}
+      - TRACKDROP_DOWNLOAD_METHOD=${TRACKDROP_DOWNLOAD_METHOD:-streamrip}
 
       # Comment Tags (default values)
-      - RECOMMAND_TARGET_COMMENT=${RECOMMAND_TARGET_COMMENT:-lb_recommendation}
-      - RECOMMAND_LASTFM_TARGET_COMMENT=${RECOMMAND_LASTFM_TARGET_COMMENT:-lastfm_recommendation}
-      - RECOMMAND_ALBUM_RECOMMENDATION_COMMENT=${RECOMMAND_ALBUM_RECOMMENDATION_COMMENT:-album_recommendation}
-      - RECOMMAND_LLM_TARGET_COMMENT=${RECOMMAND_LLM_TARGET_COMMENT:-llm_recommendation}
+      - TRACKDROP_TARGET_COMMENT=${TRACKDROP_TARGET_COMMENT:-lb_recommendation}
+      - TRACKDROP_LASTFM_TARGET_COMMENT=${TRACKDROP_LASTFM_TARGET_COMMENT:-lastfm_recommendation}
+      - TRACKDROP_ALBUM_RECOMMENDATION_COMMENT=${TRACKDROP_ALBUM_RECOMMENDATION_COMMENT:-album_recommendation}
+      - TRACKDROP_LLM_TARGET_COMMENT=${TRACKDROP_LLM_TARGET_COMMENT:-llm_recommendation}
 
       # Additional Configuration (default values)
-      - RECOMMAND_ALBUM_RECOMMENDATION_ENABLED=${RECOMMAND_ALBUM_RECOMMENDATION_ENABLED:-false}
-      - RECOMMAND_HIDE_DOWNLOAD_FROM_LINK=${RECOMMAND_HIDE_DOWNLOAD_FROM_LINK:-false}
-      - RECOMMAND_HIDE_FRESH_RELEASES=${RECOMMAND_HIDE_FRESH_RELEASES:-false}
-      - RECOMMAND_FRESH_RELEASES_CACHE_DURATION=${RECOMMAND_FRESH_RELEASES_CACHE_DURATION:-300}
-      - RECOMMAND_DEEZER_MAX_CONCURRENT_REQUESTS=${RECOMMAND_DEEZER_MAX_CONCURRENT_REQUESTS:-3}
+      - TRACKDROP_ALBUM_RECOMMENDATION_ENABLED=${TRACKDROP_ALBUM_RECOMMENDATION_ENABLED:-false}
+      - TRACKDROP_HIDE_DOWNLOAD_FROM_LINK=${TRACKDROP_HIDE_DOWNLOAD_FROM_LINK:-false}
+      - TRACKDROP_HIDE_FRESH_RELEASES=${TRACKDROP_HIDE_FRESH_RELEASES:-false}
+      - TRACKDROP_FRESH_RELEASES_CACHE_DURATION=${TRACKDROP_FRESH_RELEASES_CACHE_DURATION:-300}
+      - TRACKDROP_DEEZER_MAX_CONCURRENT_REQUESTS=${TRACKDROP_DEEZER_MAX_CONCURRENT_REQUESTS:-3}
+
+      # API Playlist Mode
+      - TRACKDROP_PLAYLIST_MODE=${TRACKDROP_PLAYLIST_MODE:-tags}
+      - TRACKDROP_DOWNLOAD_HISTORY_PATH=${TRACKDROP_DOWNLOAD_HISTORY_PATH:-/app/data/download_history.json}
+
+      # Admin credentials for library scan (startScan requires admin privileges)
+      - TRACKDROP_ADMIN_USER=${TRACKDROP_ADMIN_USER:-}
+      - TRACKDROP_ADMIN_PASSWORD=${TRACKDROP_ADMIN_PASSWORD:-}
+
+      # Web UI session secret and user settings persistence
+      - TRACKDROP_SECRET_KEY=${TRACKDROP_SECRET_KEY:-}
+      - TRACKDROP_USER_SETTINGS_PATH=${TRACKDROP_USER_SETTINGS_PATH:-/app/data/user_settings.json}
+
+      # Navidrome database path (read-only, for checking ratings across all users)
+      - TRACKDROP_NAVIDROME_DB_PATH=${TRACKDROP_NAVIDROME_DB_PATH:-/app/navidrome_data/navidrome.db}
 
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - re-command-network
+      - trackdrop-network
 
 networks:
-  re-command-network:
+  trackdrop-network:
     driver: bridge

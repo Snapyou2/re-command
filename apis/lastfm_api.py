@@ -148,7 +148,7 @@ class LastFmAPI:
                         self.network.session_key = session_key
                         print("Successfully obtained Last.fm session key!")
                         print(f"Session key: {session_key}")
-                        print("Please set this as the RECOMMAND_LASTFM_SESSION_KEY environment variable for future use.")
+                        print("Please set this as the TRACKDROP_LASTFM_SESSION_KEY environment variable for future use.")
                         break
                     except pylast.WSError as e:
                         if e.details == "The token supplied to this request is invalid. It has either expired or not yet been authorised.":
