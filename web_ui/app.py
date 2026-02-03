@@ -433,7 +433,9 @@ def pwa_manifest():
         "theme_color": "#4142e0",
         "icons": [
             {"src": "/assets/logo.svg", "sizes": "any", "type": "image/svg+xml"},
-            {"src": "/favicon.ico", "sizes": "48x48", "type": "image/png"}
+            {"src": "/assets/icon-192.png", "sizes": "192x192", "type": "image/png"},
+            {"src": "/assets/icon-512.png", "sizes": "512x512", "type": "image/png"},
+            {"src": "/assets/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
         ],
         "share_target": {
             "action": "/share",
@@ -762,7 +764,7 @@ def index():
 
 @app.route('/favicon.ico')
 def favicon():
-    return send_from_directory(os.path.join(app.root_path, 'assets'), 'favicon.png', mimetype='image/png')
+    return send_from_directory(os.path.join(app.root_path, 'assets'), 'favicon.ico', mimetype='image/x-icon')
 
 @app.route('/assets/<path:filename>')
 def assets(filename):
