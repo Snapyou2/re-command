@@ -1,6 +1,9 @@
 services:
   trackdrop:
-    image: ghcr.io/b1naryshad0w/trackdrop:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: trackdrop:latest
     container_name: trackdrop
     ports:
       - "5000:5000"
@@ -75,9 +78,3 @@ services:
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    networks:
-      - trackdrop-network
-
-networks:
-  trackdrop-network:
-    driver: bridge
