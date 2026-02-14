@@ -1,4 +1,3 @@
-import google.generativeai as genai
 import requests
 import json
 import sys
@@ -14,9 +13,17 @@ class LlmAPI:
         self.base_url = base_url
 
         if self.provider == 'gemini' and self.gemini_api_key:
-            genai.configure(api_key=self.gemini_api_key)
-            gemini_model = self.model_name or 'gemini-2.5-flash'
-            self.model = genai.GenerativeModel(gemini_model)
+            # We use the REST API directly for Gemini to avoid version conflicts in the SDK
+            # and to ensure compatibility with newer models like gemini-3-flash-preview
+            self.gemini_model = self.model_name or 'gemini-2.5-flash'
+            # Ensure model name is prefixed with models/ if not already
+            if not self.gemini_model.startswith('models/'):
+                full_model_path = f"models/{self.gemini_model}"
+            else:
+                full_model_path = self.gemini_model
+            
+            self.gemini_url = f"https://generativelanguage.googleapis.com/v1beta/{full_model_path}:generateContent?key={self.gemini_api_key}"
+            self.headers = {"Content-Type": "application/json"}
         elif self.provider == 'openrouter' and self.openrouter_api_key:
             # Use custom base URL if provided, otherwise use OpenRouter's default
             self.openrouter_url = self.base_url or "https://openrouter.ai/api/v1/chat/completions"
@@ -68,8 +75,22 @@ Example response format:
 
         try:
             if self.provider == 'gemini':
-                response = self.model.generate_content(prompt)
-                response_text = response.text
+                data = {
+                    "contents": [{
+                        "parts": [{"text": prompt}]
+                    }]
+                }
+                api_response = requests.post(self.gemini_url, headers=self.headers, json=data)
+                if api_response.status_code != 200:
+                    print(f"Gemini API Error: {api_response.status_code} {api_response.text}", file=sys.stderr)
+                api_response.raise_for_status()
+                response_json = api_response.json()
+                # Extract text from the response
+                try:
+                    response_text = response_json['candidates'][0]['content']['parts'][0]['text']
+                except (KeyError, IndexError):
+                    print(f"Gemini API Error: Unexpected response structure: {response_json}", file=sys.stderr)
+                    return []
             elif self.provider == 'openrouter':
                 openrouter_model = self.model_name or "tngtech/deepseek-r1t2-chimera:free"
                 data = {

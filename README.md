@@ -20,7 +20,7 @@
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
-- [Quick Start with Docker Compose](#quick-start-with-docker-compose)
+- [Quick Start with Docker Compose Image](#quick-start-with-docker-compose-image)
 - [Alternative: Quick Start with Docker (Script)](#alternative-quick-start-with-docker-script)
 - [Screenshots](#screenshots)
 - [Usage Modes](#usage-modes)
@@ -252,7 +252,7 @@ The web interface exposes RESTful APIs:
 
 ## LLM Model Comparison
 
-re-command supports various Large Language Models for music recommendations. From experience, gemini-2.5-flash remains the best available free model amongst external APIs recommendations options. Here is a performance comparison of free OpenRouter models I tested for music discovery:
+re-command supports various Large Language Models for music recommendations. From experience, gemini-3-flash-preview (or its predecessor gemini-2.5-flash) remains the best available free model amongst external APIs recommendations options. Here is a performance comparison of free OpenRouter models I tested for music discovery:
 
 ### Best to Worst Performance:
 
@@ -296,6 +296,9 @@ docker exec -it re-command bash
 **Container Won't Start:**
 - Check all required environment variables are set
 - Verify Navidrome server is accessible
+
+**Docker Compose Errors (`http+docker` scheme):**
+- If you see `Not supported URL scheme http+docker`, it means you are using the older `docker-compose` (V1) which has compatibility issues. Use the modern command instead: `docker compose` (no hyphen).
 
 **Downloads Failing:**
 - Verify ARL token is fresh (not expired)
