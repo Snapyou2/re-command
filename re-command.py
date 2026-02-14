@@ -9,7 +9,7 @@ from tqdm import tqdm
 from config import *
 from apis.deezer_api import DeezerAPI
 from apis.lastfm_api import LastFmAPI
-from utils import initialize_streamrip_db, update_status_file
+from utils import initialize_streamrip_db, update_status_file, DeezerAuthError
 from apis.listenbrainz_api import ListenBrainzAPI
 from apis.navidrome_api import NavidromeAPI
 from apis.llm_api import LlmAPI
@@ -202,6 +202,10 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
                         update_status_file(download_id, "in_progress", f"Downloaded {len(downloaded_songs_info)} of {total} tracks.", title, current_track_count=len(downloaded_songs_info), total_track_count=total)
                     else:
                         tqdm.write(f"Skipping download for {song_info['artist']} - {song_info['title']} (download failed).")
+                except DeezerAuthError as e:
+                    tqdm.write(f"Critical error: {e}")
+                    update_status_file(download_id, "failed", str(e), "Authentication Failed")
+                    return downloaded_count if 'downloaded_count' in locals() else 0, total 
                 except Exception as e:
                     tqdm.write(f"Error processing {song_info['artist']} - {song_info['title']}: {e}")
 
@@ -299,6 +303,10 @@ async def process_fresh_releases_albums(download_id=None):
                 print(f"Successfully downloaded album: {artist} - {album}")
             else:
                 print(f"Skipping download for album {artist} - {album} (download failed).")
+        except DeezerAuthError as e:
+            print(f"Critical error: {e}")
+            update_status_file(download_id, "failed", str(e), "Authentication Failed")
+            return
         except Exception as e:
             print(f"Error processing album {artist} - {album}: {e}")
 

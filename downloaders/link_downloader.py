@@ -8,8 +8,9 @@ from streamrip.client import DeezerClient
 from streamrip.media import PendingSingle, PendingAlbum, PendingPlaylist
 from streamrip.config import Config
 from streamrip.db import Database, Downloads, Failed
+from streamrip.exceptions import AuthenticationError
 from config import *
-from utils import Tagger, sanitize_filename, update_status_file
+from utils import Tagger, sanitize_filename, update_status_file, DeezerAuthError
 from apis.navidrome_api import NavidromeAPI
 from downloaders.track_downloader import TrackDownloader
 from typing import Optional
@@ -271,7 +272,11 @@ class LinkDownloader:
 
             # Download using streamrip for all Deezer IDs
             print(f"DEBUG: Attempting Deezer client login...", file=sys.stderr)
-            await self.deezer_client.login()
+            try:
+                await self.deezer_client.login()
+            except AuthenticationError:
+                print(f"  ❌ Deezer Authentication Error: ARL is likely invalid or expired.", file=sys.stderr)
+                raise DeezerAuthError("Deezer ARL is invalid or expired. Please update it in settings.")
             print(f"DEBUG: Deezer client login complete.", file=sys.stderr)
             
             media_type = song_info['type']

@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     jq \
+    tini \
     && rm -rf /var/lib/apt/lists/*
 
 # Directories for music library, temporary downloads, and streamrip/deemix config
@@ -40,7 +41,7 @@ COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Set the entrypoint
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 
 # Default command to run
-CMD ["tail", "-f", "/dev/null"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--timeout", "300", "web_ui.app:app"]

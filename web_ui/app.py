@@ -15,7 +15,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from config import *
 from apis.lastfm_api import LastFmAPI
-from utils import initialize_streamrip_db
+from utils import initialize_streamrip_db, DeezerAuthError
 from apis.listenbrainz_api import ListenBrainzAPI
 from apis.navidrome_api import NavidromeAPI
 from apis.deezer_api import DeezerAPI
@@ -903,7 +903,12 @@ def trigger_fresh_release_download():
         print(f"Fresh Release Download Triggered for: Artist={artist}, Album={album}, Release Date={release_date}, Download ID={download_id}")
         print(f"Album Info sent to downloader: {album_info}")
 
-        result = asyncio.run(album_downloader.download_album(album_info, is_album_recommendation=is_album_recommendation))
+        try:
+            result = asyncio.run(album_downloader.download_album(album_info, is_album_recommendation=is_album_recommendation))
+        except DeezerAuthError as e:
+            update_download_status(download_id, 'failed', str(e))
+            return jsonify({"status": "error", "message": str(e)}), 401
+
         # Update the global queue with the final status after download completes
         if result["status"] == "success":
             update_download_status(download_id, 'completed', f"Downloaded {len(result.get('files', []))} tracks.")
@@ -1003,7 +1008,11 @@ def trigger_track_download():
             'download_id': download_id # Pass download_id to the downloader
         }
 
-        downloaded_path = asyncio.run(track_downloader.download_track(track_info, lb_recommendation=lb_recommendation))
+        try:
+            downloaded_path = asyncio.run(track_downloader.download_track(track_info, lb_recommendation=lb_recommendation))
+        except DeezerAuthError as e:
+            update_download_status(download_id, 'failed', str(e))
+            return jsonify({"status": "error", "message": str(e)}), 401
         
         if downloaded_path:
             update_download_status(download_id, 'completed', "Download completed.")
@@ -1046,7 +1055,11 @@ async def download_from_link():
         }
         
         # Use globally initialized link_downloader
-        result = await link_downloader_global.download_from_url(link, lb_recommendation=lb_recommendation, download_id=download_id)
+        try:
+            result = await link_downloader_global.download_from_url(link, lb_recommendation=lb_recommendation, download_id=download_id)
+        except DeezerAuthError as e:
+            update_download_status(download_id, 'failed', str(e))
+            return jsonify({"status": "error", "message": str(e)}), 401
 
         if result:
             update_download_status(download_id, 'completed', f"Downloaded {len(result)} files.")
@@ -1244,8 +1257,12 @@ async def download_llm_recommendations_background(recommendations, download_id):
         song['recording_mbid'] = '' # Not available from LLM
         song['release_date'] = '' # Not available from LLM
         
-        downloaded_path = await track_downloader.download_track(song)
-        
+        try:
+            downloaded_path = await track_downloader.download_track(song)
+        except DeezerAuthError as e:
+            update_download_status(download_id, 'failed', str(e))
+            return
+
         if downloaded_path:
             downloaded_count += 1
             update_download_status(

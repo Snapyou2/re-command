@@ -5,12 +5,14 @@ from streamrip.client import DeezerClient
 from streamrip.media import Album, PendingAlbum
 from streamrip.config import Config
 from streamrip.db import Database, Downloads, Failed
+from streamrip.exceptions import AuthenticationError
 from tqdm import tqdm
 import sys
 import importlib
 import config
 import re
 from apis.deezer_api import DeezerAPI
+from utils import DeezerAuthError
 
 class AlbumDownloader:
     def __init__(self, tagger, album_recommendation_comment=None):
@@ -55,14 +57,18 @@ class AlbumDownloader:
         print(f"Found Deezer link: {deezer_link}")
 
         downloaded_files = []
-        if current_download_method == "deemix":
-            downloaded_files = self._download_album_deemix(deezer_link, album_info, temp_download_folder, deezer_arl)
-        elif current_download_method == "streamrip":
-            downloaded_files = await self._download_album_streamrip(deezer_link, album_info, temp_download_folder, deezer_arl)
-        else:
-            error_msg = f"Unknown DOWNLOAD_METHOD: {current_download_method}. Skipping download for {album_info['artist']} - {album_info['album']}."
-            print(error_msg)
-            return {"status": "error", "message": error_msg}
+        try:
+            if current_download_method == "deemix":
+                downloaded_files = self._download_album_deemix(deezer_link, album_info, temp_download_folder, deezer_arl)
+            elif current_download_method == "streamrip":
+                downloaded_files = await self._download_album_streamrip(deezer_link, album_info, temp_download_folder, deezer_arl)
+            else:
+                error_msg = f"Unknown DOWNLOAD_METHOD: {current_download_method}. Skipping download for {album_info['artist']} - {album_info['album']}."
+                print(error_msg)
+                return {"status": "error", "message": error_msg}
+        except DeezerAuthError:
+            # Re-raise authentication errors to be handled by the caller
+            raise
 
         if downloaded_files:
             album_id = deezer_link.split('/')[-1] # Extract album ID
@@ -341,6 +347,9 @@ class AlbumDownloader:
                 print(f"ERROR: Successfully called rip() for album {album_info['artist']} - {album_info['album']}, but could not find the downloaded files in {output_dir}.")
                 return None
 
+        except AuthenticationError:
+            print(f"  ❌ Deezer Authentication Error: ARL is likely invalid or expired.", file=sys.stderr)
+            raise DeezerAuthError("Deezer ARL is invalid or expired. Please update it in settings.")
         except Exception as e:
             print(f"Error downloading album {album_info['artist']} - {album_info['album']} with streamrip: {e}")
             import traceback

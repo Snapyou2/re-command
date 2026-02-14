@@ -119,10 +119,7 @@ rsyslogd
 sleep 2
 
 # Start cron service
-cron &
-
-# Start Gunicorn server for the Flask app in the background
-gunicorn --bind 0.0.0.0:5000 --timeout 300 "web_ui.app:app" &
+cron
 
 # Execute the main command & keep container running
 exec "$@"

@@ -1,5 +1,8 @@
 services:
   re-command:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     image: ghcr.io/snapyou2/re-command:latest
     container_name: re-command-container
     ports:

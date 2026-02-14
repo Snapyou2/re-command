@@ -13,6 +13,10 @@ from mutagen.m4a import M4A
 from streamrip.db import Database, Downloads, Failed
 from config import *
 
+class DeezerAuthError(Exception):
+    """Exception raised when Deezer authentication fails (e.g., invalid or stale ARL)."""
+    pass
+
 def initialize_streamrip_db():
     """Initializes the streamrip database, ensuring tables exist."""
     db_path = "/app/temp_downloads/downloads.db"

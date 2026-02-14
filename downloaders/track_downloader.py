@@ -5,11 +5,13 @@ from streamrip.client import DeezerClient
 from streamrip.media import Track, PendingSingle
 from streamrip.config import Config
 from streamrip.db import Database, Downloads, Failed
+from streamrip.exceptions import AuthenticationError
 from mutagen.id3 import ID3, COMM, error
 from tqdm import tqdm
 import sys
 import importlib
 import config
+from utils import DeezerAuthError
 
 class TrackDownloader:
     def __init__(self, tagger):
@@ -53,13 +55,17 @@ class TrackDownloader:
             return None
 
         downloaded_file_path = None
-        if current_download_method == "deemix":
-            downloaded_file_path = self._download_track_deemix(deezer_link, song_info, temp_download_folder)
-        elif current_download_method == "streamrip":
-            downloaded_file_path = await self._download_track_streamrip(deezer_link, song_info, temp_download_folder)
-        else:
-            print(f"  ❌ Unknown DOWNLOAD_METHOD: {current_download_method}")
-            return None
+        try:
+            if current_download_method == "deemix":
+                downloaded_file_path = self._download_track_deemix(deezer_link, song_info, temp_download_folder)
+            elif current_download_method == "streamrip":
+                downloaded_file_path = await self._download_track_streamrip(deezer_link, song_info, temp_download_folder)
+            else:
+                print(f"  ❌ Unknown DOWNLOAD_METHOD: {current_download_method}")
+                return None
+        except DeezerAuthError:
+            # Re-raise authentication errors to be handled by the caller
+            raise
 
         if downloaded_file_path:
             self.tagger.tag_track(
@@ -136,7 +142,7 @@ class TrackDownloader:
             print(f"Error downloading track {song_info['artist']} - {song_info['title']} ({deezer_link}) with deemix: {e}")
             return None
 
-    def _find_downloaded_file_deemix(self, song_info, temp_download_folder):
+    def _find_downloaded_file_deemix(self, song_info, output_dir):
         """Finds the downloaded file for deemix using improved search logic."""
         from utils import sanitize_filename
         import time
@@ -146,7 +152,7 @@ class TrackDownloader:
 
         # Get all audio files with their modification times
         audio_files = []
-        for root, _, files in os.walk(temp_download_folder):
+        for root, _, files in os.walk(output_dir):
             for filename in files:
                 if filename.endswith((".mp3", ".flac", ".m4a", ".aac", ".ogg", ".wma")):
                     filepath = os.path.join(root, filename)
@@ -222,6 +228,9 @@ class TrackDownloader:
                 print(f"  ❌ Could not find downloaded file for {song_info['artist']} - {song_info['title']}", file=sys.stderr)
                 return None
 
+        except AuthenticationError:
+            print(f"  ❌ Deezer Authentication Error: ARL is likely invalid or expired.", file=sys.stderr)
+            raise DeezerAuthError("Deezer ARL is invalid or expired. Please update it in settings.")
         except Exception as e:
             print(f"Error downloading {song_info['artist']} - {song_info['title']} with streamrip: {e}", file=sys.stderr)
             import traceback
