@@ -27,6 +27,13 @@ import uuid
 
 app = Flask(__name__)
 
+CRON_FILE = '/etc/cron.d/re-command-cron'
+DEFAULT_CRON_SCHEDULE = "0 0 * * 2"
+CRON_COMMAND = (
+    "root cd /app && ( /usr/local/bin/python3 /app/re-command.py --cleanup "
+    "&& /usr/local/bin/python3 /app/re-command.py ) >> /proc/1/fd/1 2>&1"
+)
+
 # Global dictionary to store download queue status
 # Key: download_id (UUID), Value: { 'artist', 'title', 'status', 'start_time', 'message' }
 downloads_queue = {}
@@ -54,6 +61,11 @@ deezer_api_global = DeezerAPI()
 link_downloader_global = LinkDownloader(tagger_global, navidrome_api_global, deezer_api_global)
 
 # --- Helper Functions ---
+def write_cron_file(schedule):
+    with open(CRON_FILE, 'w', newline='\n') as f:
+        f.write(f"{schedule} {CRON_COMMAND}\n")
+    os.chmod(CRON_FILE, 0o644)
+
 def validate_deemix_arl(arl_to_validate):
     """
     Attempts to validate an ARL by running a deemix command in a subprocess.
@@ -101,30 +113,20 @@ def validate_deemix_arl(arl_to_validate):
 def get_current_cron_schedule():
     try:
         # Read the crontab file
-        with open('/etc/cron.d/re-command-cron', 'r') as f:
+        with open(CRON_FILE, 'r') as f:
             cron_line = f.read().strip()
         # Extract the schedule part (e.g., "0 0 * * 2")
         match = re.match(r"^(\S+\s+\S+\s+\S+\s+\S+\s+\S+)\s+.*", cron_line)
         if match:
             return match.group(1)
     except FileNotFoundError:
-        return "0 0 * * 2"
-    return "0 0 * * 2"
+        return DEFAULT_CRON_SCHEDULE
+    return DEFAULT_CRON_SCHEDULE
 
 def update_cron_schedule(new_schedule):
     try:
-        with open('/etc/cron.d/re-command-cron', 'r') as f:
-            cron_line = f.read().strip()
-
-        command_match = re.match(r"^\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+(.*)", cron_line)
-        if command_match:
-            command_part = command_match.group(1)
-            new_cron_line = f"{new_schedule} {command_part}"
-            with open('/etc/cron.d/re-command-cron', 'w') as f:
-                f.write(new_cron_line + '\n')
-
-            subprocess.run(["crontab", "/etc/cron.d/re-command-cron"], check=True)
-            return True
+        write_cron_file(new_schedule)
+        return True
     except Exception as e:
         print(f"Error updating cron schedule: {e}")
         return False
@@ -648,23 +650,16 @@ async def get_fresh_releases():
 def toggle_cron():
     data = request.get_json()
     disabled = data.get('disabled', False)
-    cron_file = '/etc/cron.d/re-command-cron'
     try:
         if disabled:
-            if os.path.exists(cron_file):
-                os.remove(cron_file)
-                subprocess.run(["crontab", "/etc/cron.d/re-command-cron"], check=False)
+            if os.path.exists(CRON_FILE):
+                os.remove(CRON_FILE)
             return jsonify({"status": "success", "message": "Automatic downloads disabled."})
         else:
             # If cron is being enabled
-            if not os.path.exists(cron_file):
+            if not os.path.exists(CRON_FILE):
                 # Create with default schedule if it doesn't exist
-                default_schedule = "0 0 * * 2"
-                default_command = "/usr/bin/python3 /app/re-command.py >> /var/log/re-command.log 2>&1"
-                with open(cron_file, 'w') as f:
-                    f.write(f"{default_schedule} {default_command}\n")
-                os.chmod(cron_file, 0o644) # Set permissions
-                subprocess.run(["crontab", cron_file], check=True)
+                write_cron_file(DEFAULT_CRON_SCHEDULE)
                 return jsonify({"status": "success", "message": "Automatic downloads re-enabled with default schedule."})
             else:
                 # If file already exists, cron is already considered enabled, just return success
