@@ -43,7 +43,12 @@ async def process_navidrome_cleanup():
         password_nd=PASSWORD_ND,
         music_library_path=MUSIC_LIBRARY_PATH,
         target_comment=TARGET_COMMENT,
-        lastfm_target_comment=LASTFM_TARGET_COMMENT
+        lastfm_target_comment=LASTFM_TARGET_COMMENT,
+        album_recommendation_comment=ALBUM_RECOMMENDATION_COMMENT,
+        listenbrainz_enabled=LISTENBRAINZ_ENABLED,
+        lastfm_enabled=LASTFM_ENABLED,
+        llm_target_comment=LLM_TARGET_COMMENT,
+        llm_enabled=LLM_ENABLED
     )
     
     await navidrome_api.process_navidrome_library(
