@@ -73,11 +73,40 @@ echo "" >> config.py
 
 # Caching for fresh releases (in seconds)
 echo "FRESH_RELEASES_CACHE_DURATION = int(os.getenv(\"FRESH_RELEASES_CACHE_DURATION\", \"${RECOMMAND_FRESH_RELEASES_CACHE_DURATION:-300}\"))" >> config.py
+echo "FRESH_RELEASES_DAYS = int(os.getenv(\"FRESH_RELEASES_DAYS\", \"${RECOMMAND_FRESH_RELEASES_DAYS:-30}\"))" >> config.py
 echo "" >> config.py
 
 # Deezer API Rate Limiting
 echo "DEEZER_MAX_CONCURRENT_REQUESTS = int(os.getenv(\"DEEZER_MAX_CONCURRENT_REQUESTS\", \"${RECOMMAND_DEEZER_MAX_CONCURRENT_REQUESTS:-3}\"))" >> config.py
 echo "" >> config.py
+
+# Local data directory (for Docker, this is /app)
+echo "LOCAL_DATA_DIR = os.getenv(\"LOCAL_DATA_DIR\", \"/app\")" >> config.py
+echo "" >> config.py
+
+# Streamrip config path
+echo "STREAMRIP_CONFIG_PATH = os.getenv(\"STREAMRIP_CONFIG_PATH\", \"/root/.config/streamrip/config.toml\")" >> config.py
+echo "" >> config.py
+
+# Apply persisted user settings from web UI (overrides env vars)
+USER_SETTINGS_FILE="/app/temp_downloads/.user_settings.json"
+if [ -f "$USER_SETTINGS_FILE" ]; then
+    echo "" >> config.py
+    echo "# === OVERRIDES from web UI (persisted across updates) ===" >> config.py
+    python3 -c "
+import json
+with open('$USER_SETTINGS_FILE') as f:
+    data = json.load(f)
+for k, v in data.items():
+    if isinstance(v, bool):
+        print(f'{k} = {str(v)}')
+    elif isinstance(v, (int, float)):
+        print(f'{k} = {v}')
+    else:
+        escaped = str(v).replace('\"', '\\\\\"')
+        print(f'{k} = \"{escaped}\"')
+" >> config.py
+fi
 
 # Set up cron job
 # Run every Tuesday at 00:00 (Usually guarantees that the LB playlist is released)
@@ -87,11 +116,21 @@ touch /app/logs/re-command.log
 echo "0 0 * * 2 root cd /app && ( /usr/local/bin/python3 /app/re-command.py --cleanup && /usr/local/bin/python3 /app/re-command.py ) >> /proc/1/fd/1 2>&1" > /etc/cron.d/re-command-cron
 chmod 0644 /etc/cron.d/re-command-cron
 
-# Replace ARL placeholder in streamrip_config.toml
-if [ -n "${RECOMMAND_DEEZER_ARL}" ]; then
-    sed -i "s|arl = \"REPLACE_WITH_ARL\"|arl = \"${RECOMMAND_DEEZER_ARL}\"|" /root/.config/streamrip/config.toml
+# Resolve effective ARL: env var takes precedence, fall back to web UI persisted setting
+DEEZER_ARL_EFFECTIVE="${RECOMMAND_DEEZER_ARL}"
+if [ -z "$DEEZER_ARL_EFFECTIVE" ] && [ -f "$USER_SETTINGS_FILE" ]; then
+    DEEZER_ARL_EFFECTIVE=$(python3 -c "
+import json
+with open('$USER_SETTINGS_FILE') as f:
+    data = json.load(f)
+print(data.get('DEEZER_ARL', ''))
+")
+fi
+
+if [ -n "$DEEZER_ARL_EFFECTIVE" ]; then
+    sed -i "s|arl = \"REPLACE_WITH_ARL\"|arl = \"${DEEZER_ARL_EFFECTIVE}\"|" /root/.config/streamrip/config.toml
     # Create .arl file for deemix in /root/.config/deemix/
-    echo "${RECOMMAND_DEEZER_ARL}" > /root/.config/deemix/.arl
+    echo "${DEEZER_ARL_EFFECTIVE}" > /root/.config/deemix/.arl
 fi
 
 # Replace downloads folder in streamrip_config.toml

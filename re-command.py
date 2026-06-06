@@ -4,6 +4,7 @@ import asyncio
 import os
 import sys
 import argparse
+import json
 from tqdm import tqdm
 
 from config import *
@@ -16,6 +17,15 @@ from apis.llm_api import LlmAPI
 from downloaders.track_downloader import TrackDownloader
 from downloaders.album_downloader import AlbumDownloader
 from utils import remove_empty_folders, Tagger
+
+DOWNLOAD_STATUS_DIR = "/tmp/recommand_download_status"
+
+def is_download_cancelled(download_id):
+    """Check if a .cancel flag file exists for this download."""
+    if not download_id:
+        return False
+    cancel_file = os.path.join(DOWNLOAD_STATUS_DIR, f"{download_id}.cancel")
+    return os.path.exists(cancel_file)
 
 async def process_navidrome_cleanup():
     """
@@ -66,7 +76,7 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
     print(f"Starting re-command script for source: {source}...")
     # Clear debug log
     try:
-        with open('/app/debug.log', 'w') as f:
+        with open(os.path.join(LOCAL_DATA_DIR, 'debug.log'), 'w') as f:
             f.write(f"Starting re-command script for source: {source}\n")
     except:
         pass
@@ -192,11 +202,21 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
         total = len(unique_recommendations)
         source_name = "ListenBrainz" if "listenbrainz" in source.lower() else "Last.fm"
         title = f"Downloading {source_name} Playlist"
-        update_status_file(download_id, "in_progress", f"Starting download of {total} tracks.", title, current_track_count=0, total_track_count=total)
+        update_status_file(download_id, "in_progress", f"Starting download of {total} tracks.", title, current_track_count=0, total_track_count=total, current_track=None)
         downloaded_songs_info = []
         with tqdm(unique_recommendations, desc="Downloading Recommendations", unit="song") as pbar:
             for i, song_info in enumerate(pbar):
-                tqdm.write(f"Processing: {song_info['artist']} - {song_info['title']} (Source: {song_info['source']})")
+                if is_download_cancelled(download_id):
+                    tqdm.write("Download cancelled by user.")
+                    update_status_file(download_id, "failed", "Cancelled by user", "Download Cancelled",
+                        current_track_count=i, total_track_count=total)
+                    downloaded_count = i
+                    break
+
+                current_track_name = f"{song_info['artist']} - {song_info['title']}"
+                tqdm.write(f"Processing: {current_track_name} (Source: {song_info['source']})")
+                # Update status with current track
+                update_status_file(download_id, "in_progress", f"Downloading track {i+1}/{total}", title, current_track_count=i, total_track_count=total, current_track=current_track_name)
                 try:
                     # Determine if this is a ListenBrainz recommendation
                     lb_recommendation = song_info.get('source', '').lower() == 'listenbrainz'
@@ -204,7 +224,7 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
                     if downloaded_file_path:
                         downloaded_songs_info.append(song_info)
                         # Update progress
-                        update_status_file(download_id, "in_progress", f"Downloaded {len(downloaded_songs_info)} of {total} tracks.", title, current_track_count=len(downloaded_songs_info), total_track_count=total)
+                        update_status_file(download_id, "in_progress", f"Downloaded {len(downloaded_songs_info)} of {total} tracks.", title, current_track_count=len(downloaded_songs_info), total_track_count=total, current_track=current_track_name)
                     else:
                         tqdm.write(f"Skipping download for {song_info['artist']} - {song_info['title']} (download failed).")
                 except DeezerAuthError as e:
@@ -268,7 +288,7 @@ async def process_fresh_releases_albums(download_id=None):
         return
 
     print("\nFetching fresh releases from ListenBrainz...")
-    fresh_releases_data = await listenbrainz_api.get_fresh_releases()
+    fresh_releases_data = await listenbrainz_api.get_fresh_releases(days=FRESH_RELEASES_DAYS)
     releases = fresh_releases_data.get('payload', {}).get('releases', [])
 
     if not releases:
@@ -287,6 +307,11 @@ async def process_fresh_releases_albums(download_id=None):
     update_status_file(download_id, "in_progress", f"Starting download of {total_albums} albums.", "Downloading Fresh Releases Albums", current_track_count=0, total_track_count=total_albums)
     downloaded_albums_info = []
     for release in tqdm(releases, desc="Downloading Fresh Releases Albums", unit="album"):
+        if is_download_cancelled(download_id):
+            print("Download cancelled by user.")
+            update_status_file(download_id, "failed", "Cancelled by user", "Download Cancelled",
+                current_track_count=len(downloaded_albums_info), total_track_count=total_albums)
+            break
         artist = release.get('artist_credit_name', 'Unknown Artist')
         album = release.get('release_name', 'Unknown Album')
         release_date = release.get('release_date')

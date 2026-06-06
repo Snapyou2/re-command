@@ -24,7 +24,6 @@
 - [Alternative: Quick Start with Docker (Script)](#alternative-quick-start-with-docker-script)
 - [Screenshots](#screenshots)
 - [Usage Modes](#usage-modes)
-- [Local Development Setup (non-dockerized)](#local-development-setup-non-dockerized)
 - [Manual Configuration](#manual-configuration)
 - [LLM Model Comparison](#llm-model-comparison)
 - [Advanced Configuration](#advanced-configuration)
@@ -154,50 +153,6 @@ python re-command.py --cleanup
 python re-command.py --bypass-playlist-check
 ```
 
-## Local Development Setup (non-dockerized)
-
-### Prerequisites
-
-- Python 3.11+
-- Git
-- Navidrome server (local or remote)
-- Deezer ARL token
-
-### 1. Clone the Repository
-
-```bash
-git clone <repository_url>
-cd re-command
-```
-
-### 2. Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Configure Environment
-
-Edit the configuration file:
-
-```bash
-nano config.py
-```
-
-### 4. Run the Application
-
-**Command Line Interface:**
-```bash
-python re-command.py
-```
-
-**Web Interface:**
-```bash
-python web_ui/app.py
-```
-
-Then open `http://localhost:5000` in your browser.
-
 ## Manual Configuration
 
 ### Environment Variables (Docker)
@@ -288,6 +243,41 @@ Or edit the Deemix config if you are using it:
 docker exec -it re-command bash
 # Edit /root/.config/deemix/config.json
 ```
+
+#### Persisting Deemix Quality Settings
+
+If you're using Deemix, quality settings will reset to default (128kbps MP3) after container redeployment unless you persist the configuration file. To maintain your quality settings across restarts, map the Deemix config file to a persistent location on your host:
+
+1. Create a directory on your host for the Deemix config:
+```bash
+mkdir -p /path/to/your/appdata/deemix
+```
+
+2. Create a `config.json` file in that directory with your desired quality setting:
+```json
+{
+  "maxBitrate": "9"
+}
+```
+
+3. Add a volume mapping to your `docker-compose.yml`:
+```yaml
+volumes:
+  - ${MUSIC_PATH:-/home/user/Music}:/app/music
+  - ${MUSIC_PATH:-/home/user/Music}/.tempfolder:/app/temp_downloads
+  - /path/to/your/appdata/deemix/config.json:/root/.config/deemix/config.json
+```
+
+**Quality Settings:**
+- `maxBitrate: "9"` - FLAC (lossless, highest quality)
+- `maxBitrate: "3"` - 320kbps MP3
+- `maxBitrate: "1"` - 128kbps MP3 (default)
+
+After the container starts, Deemix will automatically populate the rest of the configuration parameters in the file.
+
+### Web UI Settings Persistence
+
+Changes made via the web UI are saved to the mounted volume and survive container restarts and image updates. On startup, web UI overrides are applied on top of environment variables.
 
 ## Troubleshooting
 

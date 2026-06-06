@@ -19,8 +19,8 @@ class DeezerAuthError(Exception):
 
 def initialize_streamrip_db():
     """Initializes the streamrip database, ensuring tables exist."""
-    db_path = "/app/temp_downloads/downloads.db"
-    failed_db_path = "/app/temp_downloads/failed_downloads.db"
+    db_path = os.path.join(LOCAL_DATA_DIR, "temp_downloads/downloads.db")
+    failed_db_path = os.path.join(LOCAL_DATA_DIR, "temp_downloads/failed_downloads.db")
     
     # Ensure the directory exists
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
@@ -83,7 +83,7 @@ class Tagger:
             'comment': comment,
             'timestamp': __import__('datetime').datetime.now().isoformat()
         }
-        with open('/app/debug.log', 'a') as f:
+        with open(os.path.join(LOCAL_DATA_DIR, 'debug.log'), 'a') as f:
             f.write(f"ADD_COMMENT_START: {debug_info}\n")
 
         try:
@@ -316,7 +316,7 @@ class Tagger:
             print(f"Error fetching album art: {e}")
             return None
 
-def update_status_file(download_id, status, message=None, title=None, current_track_count=None, total_track_count=None):
+def update_status_file(download_id, status, message=None, title=None, current_track_count=None, total_track_count=None, current_track=None):
     if not download_id:
         return
 
@@ -344,6 +344,8 @@ def update_status_file(download_id, status, message=None, title=None, current_tr
         status_data["current_track_count"] = current_track_count
     if total_track_count is not None:
         status_data["total_track_count"] = total_track_count
+    if current_track is not None:
+        status_data["current_track"] = current_track
 
     with open(status_file_path, 'w') as f:
         json.dump(status_data, f)

@@ -295,12 +295,13 @@ class ListenBrainzAPI:
             "caa_id": caa_id
         }
 
-    async def get_fresh_releases(self, sort="release_date", past=True, future=False):
+    async def get_fresh_releases(self, sort="release_date", past=True, future=False, days=30):
         """Fetches fresh releases for the user from ListenBrainz asynchronously."""
         params = {
             "sort": sort,
             "past": str(past).lower(),
-            "future": str(future).lower()
+            "future": str(future).lower(),
+            "days": days
         }
         
         if self._fresh_releases_cache and (time.time() - self._fresh_releases_cache_timestamp) < FRESH_RELEASES_CACHE_DURATION:

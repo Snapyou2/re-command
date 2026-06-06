@@ -594,7 +594,7 @@ async def get_fresh_releases():
         listenbrainz_api = ListenBrainzAPI(ROOT_LB, TOKEN_LB, USER_LB, LISTENBRAINZ_ENABLED)
         
         lb_fetch_start_time = time.perf_counter()
-        data = await listenbrainz_api.get_fresh_releases()
+        data = await listenbrainz_api.get_fresh_releases(days=FRESH_RELEASES_DAYS)
         lb_fetch_end_time = time.perf_counter()
         lb_fetch_duration = (lb_fetch_end_time - lb_fetch_start_time) * 1000
         server_timing_metrics.append(f"lb_fetch;dur={lb_fetch_duration:.2f};desc=\"ListenBrainz Fetch\"")

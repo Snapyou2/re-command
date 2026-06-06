@@ -10,13 +10,14 @@ from apis.deezer_api import DeezerAPI
 from config import LASTFM_ENABLED as GLOBAL_LASTFM_ENABLED
 
 class LastFmAPI:
-    def __init__(self, api_key, api_secret, username, password, session_key, lastfm_enabled):
+    def __init__(self, api_key, api_secret, username, password, session_key, lastfm_enabled, auth_url_callback=None):
         self._api_key = api_key
         self._api_secret = api_secret
         self._username = username
         self._password = password
         self._session_key = session_key
         self._lastfm_enabled = lastfm_enabled
+        self._auth_url_callback = auth_url_callback
         self.network = None
 
     def _make_request_with_retries(self, method, url, headers=None, params=None, json=None, data=None, max_retries=5, retry_delay=5):
@@ -136,6 +137,10 @@ class LastFmAPI:
 
                 print(f"Please authorize this application by visiting: {url}")
                 print("The application will automatically detect when you've authorized it.")
+                
+                # Call the callback if provided (for UI notification)
+                if self._auth_url_callback:
+                    self._auth_url_callback(url)
 
                 # Don't open webbrowser in Docker/container environment
                 # Poll for authorization instead of waiting for user input
@@ -168,9 +173,10 @@ class LastFmAPI:
     def get_recommended_tracks(self, limit=100):
         """
         Fetches recommended tracks from Last.fm using the undocumented /recommended endpoint.
+        No authentication required.
         """
-        if not self.network:
-            print("Last.fm not authenticated.")
+        if not self._username:
+            print("Last.fm username not configured.")
             return []
 
         username = self._username
@@ -233,11 +239,6 @@ class LastFmAPI:
         print(" ####  ######  #######    ##### ###  ###   ###   ###  ###")
         print("\033[0m")
         
-        network = self.authenticate_lastfm()
-        if not network:
-            print("Failed to authenticate with Last.fm. Cannot get Last.fm recommendations.")
-            return []
-
         recommended_tracks = self.get_recommended_tracks()
 
         if not recommended_tracks:

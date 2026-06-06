@@ -265,8 +265,8 @@ class AlbumDownloader:
             if not os.path.exists(output_dir):
                 print(f"WARNING: Output directory {output_dir} does not exist. Creating it.")
                 os.makedirs(output_dir, exist_ok=True)
-            print(f"Streamrip: Using config file: /root/.config/streamrip/config.toml")
-            streamrip_config = Config("/root/.config/streamrip/config.toml")
+            print(f"Streamrip: Using config file: {config.STREAMRIP_CONFIG_PATH}")
+            streamrip_config = Config(config.STREAMRIP_CONFIG_PATH)
             
             client = DeezerClient(config=streamrip_config)
 
@@ -278,7 +278,7 @@ class AlbumDownloader:
             print(f"Streamrip: Album ID: {album_id}")
 
             print("Streamrip: Setting up database...")
-            rip_db = Database(downloads=Downloads("/app/temp_downloads/downloads.db"), failed=Failed("/app/temp_downloads/failed_downloads.db"))
+            rip_db = Database(downloads=Downloads(os.path.join(config.LOCAL_DATA_DIR, "temp_downloads/downloads.db")), failed=Failed(os.path.join(config.LOCAL_DATA_DIR, "temp_downloads/failed_downloads.db")))
 
             print("Streamrip: Creating pending album...")
             pending_album = PendingAlbum(id=album_id, client=client, config=streamrip_config, db=rip_db)

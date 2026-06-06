@@ -23,9 +23,9 @@ class LinkDownloader:
         self.temp_download_folder = TEMP_DOWNLOAD_FOLDER
         self.music_library_path = MUSIC_LIBRARY_PATH
         self.track_downloader = TrackDownloader(tagger)
-        self.streamrip_config = Config("/root/.config/streamrip/config.toml")
+        self.streamrip_config = Config(STREAMRIP_CONFIG_PATH)
         self.deezer_client = DeezerClient(config=self.streamrip_config)
-        self.rip_db = Database(downloads=Downloads("/app/temp_downloads/downloads.db"), failed=Failed("/app/temp_downloads/failed_downloads.db"))
+        self.rip_db = Database(downloads=Downloads(os.path.join(LOCAL_DATA_DIR, "temp_downloads/downloads.db")), failed=Failed(os.path.join(LOCAL_DATA_DIR, "temp_downloads/failed_downloads.db")))
         self.songlink_base_url = "https://api.song.link/v1-alpha.1"
 
     async def download_from_url(self, url: str, lb_recommendation: bool = False, download_id: Optional[str] = None):
@@ -38,7 +38,7 @@ class LinkDownloader:
             'download_id': download_id,
             'timestamp': __import__('datetime').datetime.now().isoformat()
         }
-        with open('/app/debug.log', 'a') as f:
+        with open(os.path.join(LOCAL_DATA_DIR, 'debug.log'), 'a') as f:
             f.write(f"LINK_DOWNLOADER_START: {debug_info}\n")
 
         # Regex for supported platforms

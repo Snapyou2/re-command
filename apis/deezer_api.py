@@ -6,11 +6,14 @@ import asyncio
 import os
 import datetime
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from config import LOCAL_DATA_DIR
+
 class DeezerAPI:
     def __init__(self):
         self.search_url = "https://api.deezer.com/search"
         self.track_url_base = "https://api.deezer.com/track/"
-        self.log_file_path = "/app/deezer_api_debug.log"
+        self.log_file_path = os.path.join(LOCAL_DATA_DIR, "deezer_api_debug.log")
         self._availability_cache = {}
 
     def _log_to_file(self, message):

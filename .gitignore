@@ -5,3 +5,14 @@ web_ui/__pycache__
 docker/run_recommand_auto.sh
 docker/.env
 roadmap.md
+
+# Local development
+run_local.sh
+temp_downloads/
+music/
+logs/
+.streamrip_config.toml
+debug.log
+deezer_api_debug.log
+playlist_history.txt
+.tempfolder/

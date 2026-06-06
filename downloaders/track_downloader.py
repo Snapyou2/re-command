@@ -11,7 +11,7 @@ from tqdm import tqdm
 import sys
 import importlib
 import config
-from utils import DeezerAuthError
+from utils import DeezerAuthError, update_status_file
 
 class TrackDownloader:
     def __init__(self, tagger):
@@ -27,6 +27,15 @@ class TrackDownloader:
         current_download_method = config.DOWNLOAD_METHOD
         temp_download_folder = config.TEMP_DOWNLOAD_FOLDER
         deezer_arl = config.DEEZER_ARL
+        
+        # Get download_id from song_info if available
+        download_id = song_info.get('download_id')
+        current_track_name = f"{song_info['artist']} - {song_info['title']}"
+        
+        # Update status file with current track if we have a download_id
+        if download_id:
+            update_status_file(download_id, "in_progress", f"Downloading: {current_track_name}", 
+                             current_track=current_track_name)
 
         # Determine the correct comment based on source and lb_recommendation flag
         # Special handling: if source is 'Manual' but lb_recommendation is set, prioritize it
@@ -46,7 +55,7 @@ class TrackDownloader:
             'determined_comment': comment,
             'timestamp': __import__('datetime').datetime.now().isoformat()
         }
-        with open('/app/debug.log', 'a') as f:
+        with open(os.path.join(config.LOCAL_DATA_DIR, 'debug.log'), 'a') as f:
             f.write(f"TRACK_DOWNLOADER_START: {debug_info}\n")
 
         deezer_link = await self._get_deezer_link_and_details(song_info)
@@ -188,7 +197,7 @@ class TrackDownloader:
         """Downloads a track using streamrip."""
         try:
             # Streamrip Config object, path -> streamrip config file
-            streamrip_config = Config("/root/.config/streamrip/config.toml")
+            streamrip_config = Config(config.STREAMRIP_CONFIG_PATH)
 
             # Initialize DeezerClient with the config object
             client = DeezerClient(config=streamrip_config)
@@ -197,7 +206,7 @@ class TrackDownloader:
             track_id = deezer_link.split('/')[-1]
 
             # Creating a database for streamrip
-            rip_db = Database(downloads=Downloads("/app/temp_downloads/downloads.db"), failed=Failed("/app/temp_downloads/failed_downloads.db"))
+            rip_db = Database(downloads=Downloads(os.path.join(config.LOCAL_DATA_DIR, "temp_downloads/downloads.db")), failed=Failed(os.path.join(config.LOCAL_DATA_DIR, "temp_downloads/failed_downloads.db")))
 
             # Get the PendingSingle object
             pending = PendingSingle(id=track_id, client=client, config=streamrip_config, db=rip_db)
@@ -206,7 +215,11 @@ class TrackDownloader:
             my_track = await pending.resolve()
 
             if my_track is None:
-                print(f"Skipping download for {song_info['artist']} - {song_info['title']} (Error resolving media or already downloaded).", file=sys.stderr)
+                # Track was already downloaded in a previous run. Find it on disk.
+                existing_path = await self._find_downloaded_file_streamrip(song_info, temp_download_folder)
+                if existing_path:
+                    return existing_path
+                print(f"Skipping download for {song_info['artist']} - {song_info['title']} (Error resolving media and not found on disk).", file=sys.stderr)
                 print(f"Debug: Deezer link: {deezer_link}, track_id: {track_id}", file=sys.stderr)
                 return None
 
