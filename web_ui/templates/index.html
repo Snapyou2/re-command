@@ -16,7 +16,9 @@
             </svg>
         </div>
         <div class="header-icons-top-right">
-            <img src="/assets/dl_queue.svg" class="header-icon" @click="toggleQueuePanel()" alt="Download Queue">
+            <svg class="header-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" @click="toggleQueuePanel()">
+                <path d="M 17.727626,19.369618 V 0.99999999 m 0,18.36961801 -5.004657,-5.009896 m 5.004657,5.009896 5.004658,-5.009896 M 1,1.7696715 H 12.200214 M 1,7.4045513 H 12.200214 M 1,13.03943 h 5.6001067" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
         </div>
         <img src="/assets/logo.svg" alt="Re-command Logo" class="logo">
         <h1>Re-command Docker UI</h1>
@@ -292,10 +294,9 @@
             <h2>Settings</h2>
 
             <div class="settings">
-                <details open>
-                    <summary>Configuration</summary>
+                <details>
+                    <summary>Navidrome</summary>
                     <div style="padding: 15px;">
-                        <h3>Navidrome Settings</h3>
                         <div class="form-group">
                             <label for="navidromeUrl">URL:</label>
                             <input type="text" id="navidromeUrl" :value="config ? config.ROOT_ND : ''" placeholder="http://your-navidrome-server:4533">
@@ -308,24 +309,13 @@
                             <label for="navidromePassword">Password:</label>
                             <input type="password" id="navidromePassword" :value="config ? config.PASSWORD_ND : ''">
                         </div>
+                    </div>
+                </details>
 
-                        <h3>Download Settings</h3>
-                        <div class="form-group">
-                            <label for="deezerArl">
-                                ARL field:
-                                <span class="help-icon" title="Log into Deezer web → Open browser dev tools (F12) → Go to Application/Storage → Cookies → deezer.com → Copy 'arl' cookie value">ℹ️</span>
-                            </label>
-                            <input type="text" id="deezerArl" :value="config ? config.DEEZER_ARL : ''" placeholder="Your Deezer ARL token">
-                        </div>
-                        <div class="form-group">
-                            <label for="downloadMethod">Downloader:</label>
-                            <select id="downloadMethod" style="padding: 8px; border-radius: 4px; background-color: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color);">
-                                <option value="streamrip" :selected="config && config.DOWNLOAD_METHOD === 'streamrip'">Streamrip</option>
-                                <option value="deemix" :selected="config && config.DOWNLOAD_METHOD === 'deemix'">Deemix</option>
-                            </select>
-                        </div>
-
-                        <h3>ListenBrainz Settings</h3>
+                <details>
+                    <summary>Playlist Providers</summary>
+                    <div style="padding: 15px;">
+                        <h3>ListenBrainz</h3>
                         <div class="form-group">
                             <label>
                                 <input type="checkbox" id="listenbrainzEnabled" x-model="listenbrainzOptionsVisible">
@@ -343,7 +333,7 @@
                             </div>
                         </div>
 
-                        <h3>Last.fm Settings</h3>
+                        <h3>Last.fm</h3>
                         <div class="form-group">
                             <label>
                                 <input type="checkbox" id="lastfmEnabled" x-model="lastfmOptionsVisible">
@@ -369,7 +359,7 @@
                             </div>
                         </div>
 
-                        <h3>LLM Suggestions Settings</h3>
+                        <h3>LLM Suggestions</h3>
                         <div class="form-group">
                             <label>
                                 <input type="checkbox" id="llmEnabled" x-model="llmOptionsVisible">
@@ -401,8 +391,88 @@
                                 </small>
                             </div>
                         </div>
+                    </div>
+                </details>
 
-                        <h3>UI Visibility Settings</h3>
+                <details>
+                    <summary>Downloaders</summary>
+                    <div style="padding: 15px;" x-data="{ dm: (config && config.DOWNLOAD_METHOD) || 'streamrip' }">
+                        <div class="form-group">
+                            <label>Download Method:</label>
+                            <div style="display: flex; gap: 0; margin-top: 5px;">
+                                <button type="button" @click="dm = 'streamrip'; document.getElementById('downloadMethod').value = 'streamrip'"
+                                    style="flex:1; padding:8px 12px; border:1px solid var(--border-color); border-radius:4px 0 0 4px; cursor:pointer; background-color: #3a3a5a; color:var(--text-color);"
+                                    :style="dm === 'streamrip' ? 'background-color: #2d7d46; color: white; border-color: #2d7d46;' : ''">
+                                    Streamrip
+                                </button>
+                                <button type="button" @click="dm = 'deemix'; document.getElementById('downloadMethod').value = 'deemix'"
+                                    style="flex:1; padding:8px 12px; border:1px solid var(--border-color); border-left:none; cursor:pointer; background-color: #3a3a5a; color:var(--text-color);"
+                                    :style="dm === 'deemix' ? 'background-color: #2d7d46; color: white; border-color: #2d7d46;' : ''">
+                                    Deemix
+                                </button>
+                                <button type="button" @click="dm = 'soulseek'; document.getElementById('downloadMethod').value = 'soulseek'"
+                                    style="flex:1; padding:8px 12px; border:1px solid var(--border-color); border-left:none; border-radius:0 4px 4px 0; cursor:pointer; background-color: #3a3a5a; color:var(--text-color);"
+                                    :style="dm === 'soulseek' ? 'background-color: #2d7d46; color: white; border-color: #2d7d46;' : ''">
+                                    Soulseek
+                                </button>
+                            </div>
+                            <input type="hidden" id="downloadMethod" :value="dm">
+                        </div>
+
+                        <div x-show="dm === 'streamrip' || dm === 'deemix'" style="margin-top: 10px;">
+                            <div class="form-group">
+                                <label for="deezerArl">
+                                    Deezer ARL:
+                                    <span class="help-icon" title="Log into Deezer web → Open browser dev tools (F12) → Go to Application/Storage → Cookies → deezer.com → Copy 'arl' cookie value">ℹ️</span>
+                                </label>
+                                <input type="text" id="deezerArl" :value="config ? config.DEEZER_ARL : ''" placeholder="Your Deezer ARL token">
+                            </div>
+                        </div>
+
+                        <div x-show="dm === 'soulseek'" style="margin-top: 10px;">
+                            <div class="form-group">
+                                <label for="soulseekUsername">Soulseek Username:</label>
+                                <input type="text" id="soulseekUsername" :value="config ? config.SOULSEEK_USERNAME : ''" placeholder="Your Soulseek username">
+                            </div>
+                            <div class="form-group">
+                                <label for="soulseekPassword">Soulseek Password:</label>
+                                <input type="password" id="soulseekPassword" :value="config ? config.SOULSEEK_PASSWORD : ''" placeholder="Your Soulseek password">
+                            </div>
+                            <div class="form-group">
+                                <label for="soulseekTimeout">Search Timeout (seconds):</label>
+                                <input type="number" id="soulseekTimeout" :value="config ? config.SOULSEEK_SEARCH_TIMEOUT : 15" min="5" max="60" placeholder="15">
+                            </div>
+                            <div class="form-group">
+                                <label>
+                                    <input type="checkbox" id="soulseekKeepAlive" :checked="config ? config.SOULSEEK_KEEP_ALIVE : true">
+                                    Keep Soulseek client always on
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label for="soulseekMinQuality">Minimum quality:</label>
+                                <div style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
+                                    <span style="font-size: 0.85em; color: #b0b0b0; min-width: 60px;">128 kbps</span>
+                                    <input type="range" id="soulseekMinQuality" min="0" max="3" step="1"
+                                        :value="config ? (config.SOULSEEK_MIN_QUALITY === 128 ? 0 : config.SOULSEEK_MIN_QUALITY === 192 ? 1 : config.SOULSEEK_MIN_QUALITY === 320 ? 2 : 3) : 0"
+                                        @input="document.getElementById('soulseekMinQualityLabel').textContent = ['128 kbps', '192 kbps', '320 kbps', 'Lossless'][parseInt($event.target.value)]"
+                                        style="flex: 1; accent-color: var(--primary-color);">
+                                    <span id="soulseekMinQualityLabel" style="font-size: 0.9em; min-width: 80px; text-align: right;"
+                                        x-text="config ? (config.SOULSEEK_MIN_QUALITY === 128 ? '128 kbps' : config.SOULSEEK_MIN_QUALITY === 192 ? '192 kbps' : config.SOULSEEK_MIN_QUALITY === 320 ? '320 kbps' : 'Lossless') : '128 kbps'"></span>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>
+                                    <input type="checkbox" id="soulseekShareMusic" :checked="config ? config.SOULSEEK_SHARE_MUSIC : false">
+                                    Share music library with Soulseek peers
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </details>
+
+                <details>
+                    <summary>UI Visibility</summary>
+                    <div style="padding: 15px;">
                         <div class="form-group">
                             <label>
                                 <input type="checkbox" id="hideDownloadFromLink" :checked="config && config.HIDE_DOWNLOAD_FROM_LINK">
@@ -415,10 +485,12 @@
                                 Hide "Fresh Releases" section
                             </label>
                         </div>
-
-                        <button @click="saveConfiguration()">Save Configuration</button>
                     </div>
                 </details>
+
+                <div style="padding: 0 15px 15px 15px;">
+                    <button @click="saveConfiguration()" style="width: 100%;">Save Configuration</button>
+                </div>
 
                 <details>
                     <summary>Automation</summary>
@@ -507,71 +579,79 @@
             <path d="M6 18L18 6M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
         <div class="modal-content">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h2>Download Queue</h2>
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <template x-if="queuedCount > 0">
-                        <span style="color: var(--info-color); font-size: 0.85em;" x-text="queuedCount + ' queued'"></span>
-                    </template>
-                </div>
+            <div class="queue-toolbar">
+                <template x-if="queuedCount > 0">
+                    <span class="queue-count" x-text="queuedCount + ' queued'"></span>
+                </template>
+                <template x-if="downloadQueue.length > 0">
+                    <button class="cleanup-btn" @click="cleanupQueue()" title="Remove finished/cancelled entries">
+                        <svg width="14px" height="14px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M3 6H21M19 6V20C19 21 18 22 17 22H7C6 22 5 21 5 20V6M8 6V4C8 3 9 2 10 2H14C15 2 16 3 16 4V6M10 11V17M14 11V17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        Cleanup
+                    </button>
+                </template>
             </div>
+            <h2 class="queue-title">Download Queue</h2>
             <div id="downloadQueueModalContent" style="flex-grow: 1; overflow-y: auto;">
                 <template x-if="downloadQueue.length === 0">
                     <p style="text-align: center; color: #b0b0b0;">No downloads in queue.</p>
                 </template>
                 <template x-for="item in downloadQueue" :key="item.id">
                     <div class="download-queue-item" :class="item.status">
-                        <div class="track-info">
-                            <div class="track-title" x-text="item.title"></div>
-                            <div class="track-artist" x-text="item.artist"></div>
-                            
-                            <!-- Current Track Display -->
-                            <template x-if="item.current_track && (item.status === 'in_progress' || item.status === 'pending')">
-                                <div class="current-track-info">
-                                    <div class="current-track-label">Currently Downloading</div>
-                                    <div class="current-track-name" x-text="item.current_track"></div>
+                        <div class="queue-item-main">
+                            <div class="track-info">
+                                <div class="track-title" x-text="item.title"></div>
+                                <div class="track-artist" x-text="item.artist"></div>
+                            </div>
+                            <div class="status-actions">
+                                <template x-if="item.status === 'queued' || item.status === 'in_progress' || item.status === 'pending'">
+                                    <button class="cancel-btn" @click="cancelDownload(item.id)" title="Cancel download">
+                                        <svg width="20px" height="20px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                    </button>
+                                </template>
+                                <div class="status-icon" :class="item.status">
+                                    <template x-if="item.status === 'queued'">
+                                        <span style="font-size: 20px;">⏳</span>
+                                    </template>
+                                    <template x-if="item.status === 'in_progress'">
+                                        <div class="spinner"></div>
+                                    </template>
+                                    <template x-if="item.status === 'completed'">
+                                        <svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 12.6111L8.92308 17.5L20 6.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                    </template>
+                                    <template x-if="item.status === 'failed'">
+                                        <svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 9V13M12 15V15.01M22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                    </template>
                                 </div>
-                            </template>
-                            
-                            <template x-if="item.current_track_count !== undefined && item.total_track_count !== undefined">
-                                <div class="progress-text" style="font-size: 0.85em; margin-top: 5px; color: #b0b0b0;" x-text="item.current_track_count + '/' + item.total_track_count + ' tracks downloaded'"></div>
-                            </template>
-                            <template x-if="item.status === 'failed' && item.message">
-                                <div class="error-message" style="color: var(--error-color); font-size: 0.85em; margin-top: 5px;" x-text="'Error: ' + item.message"></div>
-                            </template>
-                            <template x-if="item.status === 'completed' && item.message">
-                                <div class="success-message" style="color: var(--success-color); font-size: 0.85em; margin-top: 5px;" x-text="item.message"></div>
-                            </template>
-                            <template x-if="item.status === 'queued'">
-                                <div class="queued-message" style="color: #888; font-size: 0.85em; margin-top: 5px;">Waiting in queue...</div>
-                            </template>
-                        </div>
-                        <div class="status-actions" style="display: flex; align-items: center; gap: 10px;">
-                            <template x-if="item.status === 'queued' || item.status === 'in_progress' || item.status === 'pending'">
-                                <button class="cancel-btn" @click="cancelDownload(item.id)" title="Cancel download">
-                                    <svg width="20px" height="20px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                        <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                                    </svg>
-                                </button>
-                            </template>
-                            <div class="status-icon" :class="item.status">
-                                <template x-if="item.status === 'queued'">
-                                    <span style="font-size: 20px;">⏳</span>
-                                </template>
-                                <template x-if="item.status === 'pending'">
-                                    <div class="spinner-small" style="width: 24px; height: 24px; border-width: 3px; margin: 0;"></div>
-                                </template>
-                                <template x-if="item.status === 'in_progress'">
-                                    <div class="spinner"></div>
-                                </template>
-                                <template x-if="item.status === 'completed'">
-                                    <svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 12.6111L8.92308 17.5L20 6.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                                </template>
-                                <template x-if="item.status === 'failed'">
-                                    <svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 9V13M12 15V15.01M22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                                </template>
                             </div>
                         </div>
+
+                        <!-- Progress bar for items with total_track_count -->
+                        <template x-if="item.total_track_count > 0">
+                            <div class="progress-section" :class="{ 'progress-active': item.status === 'in_progress' }">
+                                <div class="progress-bar-bg">
+                                    <div class="progress-bar-fill" :style="'width: ' + Math.min(100, ((item.current_track_count || 0) / item.total_track_count) * 100) + '%'"></div>
+                                </div>
+                                <div class="progress-info">
+                                    <span class="progress-count" x-text="(item.current_track_count || 0) + '/' + item.total_track_count"></span>
+                                    <span class="progress-track" x-text="item.current_track || ''"></span>
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- Status messages -->
+                        <template x-if="item.status === 'failed' && item.message">
+                            <div class="status-msg status-error" x-text="item.message"></div>
+                        </template>
+                        <template x-if="item.status === 'completed' && item.message">
+                            <div class="status-msg status-success" x-text="item.message"></div>
+                        </template>
+                        <template x-if="item.status === 'queued'">
+                            <div class="status-msg status-queued">Waiting in queue...</div>
+                        </template>
                     </div>
                 </template>
             </div>

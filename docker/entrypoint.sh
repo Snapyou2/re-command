@@ -52,6 +52,16 @@ echo "" >> config.py
 echo "DOWNLOAD_METHOD = os.getenv(\"DOWNLOAD_METHOD\", \"${RECOMMAND_DOWNLOAD_METHOD:-streamrip}\")" >> config.py
 echo "" >> config.py
 
+# Soulseek Configuration (Optional, auto-generates random username if empty)
+SOULSEEK_USERNAME="${RECOMMAND_SOULSEEK_USERNAME:-recommand_$(tr -dc 'a-z0-9' < /dev/urandom | head -c 8)}"
+echo "SOULSEEK_USERNAME = os.getenv(\"SOULSEEK_USERNAME\", \"${SOULSEEK_USERNAME}\")" >> config.py
+echo "SOULSEEK_PASSWORD = os.getenv(\"SOULSEEK_PASSWORD\", \"${RECOMMAND_SOULSEEK_PASSWORD:-}\")" >> config.py
+echo "SOULSEEK_SEARCH_TIMEOUT = int(os.getenv(\"SOULSEEK_SEARCH_TIMEOUT\", \"${RECOMMAND_SOULSEEK_SEARCH_TIMEOUT:-15}\"))" >> config.py
+echo "SOULSEEK_KEEP_ALIVE = os.getenv(\"SOULSEEK_KEEP_ALIVE\", \"${RECOMMAND_SOULSEEK_KEEP_ALIVE:-True}\").lower() == \"true\"" >> config.py
+echo "SOULSEEK_MIN_QUALITY = int(os.getenv(\"SOULSEEK_MIN_QUALITY\", \"${RECOMMAND_SOULSEEK_MIN_QUALITY:-128}\"))" >> config.py
+echo "SOULSEEK_SHARE_MUSIC = os.getenv(\"SOULSEEK_SHARE_MUSIC\", \"${RECOMMAND_SOULSEEK_SHARE_MUSIC:-False}\").lower() == \"true\"" >> config.py
+echo "" >> config.py
+
 # Album Recommendation Settings
 echo "ALBUM_RECOMMENDATION_ENABLED = os.getenv(\"ALBUM_RECOMMENDATION_ENABLED\", \"${RECOMMAND_ALBUM_RECOMMENDATION_ENABLED:-false}\").lower() == \"true\"" >> config.py
 echo "" >> config.py

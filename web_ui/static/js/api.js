@@ -169,5 +169,13 @@ const API = {
             headers: { 'Content-Type': 'application/json' }
         });
         return response.json();
+    },
+
+    async cleanupQueue() {
+        const response = await fetch('/api/cleanup_queue', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        return response.json();
     }
 };

@@ -23,6 +23,9 @@ COPY docker/streamrip_config.toml /root/.config/streamrip/config.toml
 COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt && \
+    # Install aioslsk without deps to avoid clashing with aiofiles 0.7.0 (streamrip pin)
+    pip install --no-cache-dir aioslsk --no-deps && \
+    pip install --no-cache-dir pydantic-settings async-timeout async-upnp-client voluptuous python-didl-lite && \
     # Ensure certifi's certificates are part of the system's trusted CAs
     python -c "import certifi; import shutil; shutil.copyfile(certifi.where(), '/usr/local/share/ca-certificates/certifi.crt')" && \
     update-ca-certificates
@@ -44,4 +47,4 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 
 # Default command to run
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--timeout", "300", "web_ui.app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--timeout", "300", "web_ui.app:app"]

@@ -9,6 +9,7 @@ import traceback
 import time
 import threading
 import json
+import queue as queue_module
 from datetime import datetime
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -37,6 +38,12 @@ CRON_COMMAND = (
 # Global dictionary to store download queue status
 # Key: download_id (UUID), Value: { 'artist', 'title', 'status', 'start_time', 'message' }
 downloads_queue = {}
+BATCH_DOWNLOAD_LOCK = "/tmp/recommand_batch_download.lock"
+
+# Queue manager state
+_download_manager = None
+_current_download_id = None
+_cancel_event = threading.Event()
 
 # Initialize streamrip database at the very start
 initialize_streamrip_db()
@@ -59,6 +66,7 @@ navidrome_api_global = NavidromeAPI(
 )
 deezer_api_global = DeezerAPI()
 link_downloader_global = LinkDownloader(tagger_global, navidrome_api_global, deezer_api_global)
+soulseek_queue = None
 
 # --- Helper Functions ---
 def write_cron_file(schedule):
@@ -133,7 +141,7 @@ def update_cron_schedule(new_schedule):
     return False
 
 # --- Helper to update download status (used by background tasks, or simulated) ---
-def update_download_status(download_id, status, message=None, title=None, current_track_count=None, total_track_count=None):
+def update_download_status(download_id, status, message=None, title=None, current_track=None, current_track_count=None, total_track_count=None, parent_download_id=None):
     if download_id in downloads_queue:
         item = downloads_queue[download_id]
         item['status'] = status
@@ -141,23 +149,28 @@ def update_download_status(download_id, status, message=None, title=None, curren
             item['message'] = message
         if title is not None:
             item['title'] = title
+        if current_track is not None:
+            item['current_track'] = current_track
         if current_track_count is not None:
             item['current_track_count'] = current_track_count
         if total_track_count is not None:
             item['total_track_count'] = total_track_count
+        if parent_download_id is not None:
+            item['parent_download_id'] = parent_download_id
     else:
         print(f"Download ID {download_id} not found in queue.")
-        # This can happen if app.py restarts and finds an old status file
         print(f"Download ID {download_id} not in memory queue. Creating new entry from status file.")
         downloads_queue[download_id] = {
             'id': download_id,
-            'artist': 'Playlist Download', # Generic placeholder
+            'artist': 'Playlist Download',
             'title': title or f'Download {download_id[:8]}...',
             'status': status,
             'start_time': datetime.now().isoformat(),
             'message': message,
+            'current_track': current_track or '',
             'current_track_count': current_track_count,
-            'total_track_count': total_track_count
+            'total_track_count': total_track_count,
+            'parent_download_id': parent_download_id
         }
 
 DOWNLOAD_STATUS_DIR = "/tmp/recommand_download_status"
@@ -180,8 +193,10 @@ def poll_download_statuses():
                             status = status_data.get('status')
                             message = status_data.get('message')
                             title = status_data.get('title')
+                            current_track = status_data.get('current_track')
                             current_track_count = status_data.get('current_track_count')
                             total_track_count = status_data.get('total_track_count')
+                            parent_download_id = status_data.get('parent_download_id')
                             timestamp = datetime.fromisoformat(status_data.get('timestamp'))
 
                             # Check if an update to the in-memory queue is needed
@@ -192,6 +207,7 @@ def poll_download_statuses():
                                 current_item = downloads_queue[download_id]
                                 if current_item['status'] != status or \
                                    (title and current_item.get('title') != title) or \
+                                   (current_track and current_item.get('current_track') != current_track) or \
                                    (message and current_item.get('message') != message) or \
                                    (current_track_count is not None and current_item.get('current_track_count') != current_track_count) or \
                                    (total_track_count is not None and current_item.get('total_track_count') != total_track_count):
@@ -199,7 +215,7 @@ def poll_download_statuses():
 
                             if needs_update:
                                 print(f"Polling: Found update for {download_id}. New status: {status}, New title: {title}")
-                                update_download_status(download_id, status, message, title, current_track_count, total_track_count)
+                                update_download_status(download_id, status, message, title, current_track, current_track_count, total_track_count, parent_download_id)
 
                             # Cleanup completed/failed entries and their files after an interval
                             if status in ['completed', 'failed']:
@@ -210,6 +226,16 @@ def poll_download_statuses():
                                     del downloads_queue[download_id]
                                     os.remove(filepath)
                                     print(f"Removed status file {filepath}.")
+
+                            # Check for .cancel flag
+                            cancel_file = os.path.join(DOWNLOAD_STATUS_DIR, f"{download_id}.cancel")
+                            if os.path.exists(cancel_file) and status == 'in_progress':
+                                status_data['status'] = 'failed'
+                                status_data['message'] = 'Cancelled by user'
+                                with open(filepath, 'w') as f:
+                                    json.dump(status_data, f)
+                                print(f"Polling: Detected cancel for {download_id}")
+                                needs_update = True
 
                         except json.JSONDecodeError:
                             print(f"Error decoding JSON from status file: {filepath}")
@@ -242,6 +268,10 @@ def poll_download_statuses():
             print(f"Error in poll_download_statuses thread: {e}")
         time.sleep(5) # Poll every 5 seconds
 
+# Start poller thread at module level (works under gunicorn)
+_download_poller = threading.Thread(target=poll_download_statuses, daemon=True)
+_download_poller.start()
+
 # --- Routes ---
 @app.route('/api/download_queue', methods=['GET'])
 def get_download_queue():
@@ -257,16 +287,18 @@ def get_download_queue():
                     status = status_data.get('status')
                     message = status_data.get('message')
                     title = status_data.get('title')
+                    current_track = status_data.get('current_track')
                     current_track_count = status_data.get('current_track_count')
                     total_track_count = status_data.get('total_track_count')
-                    update_download_status(download_id, status, message, title, current_track_count, total_track_count)
+                    parent_download_id = status_data.get('parent_download_id')
+                    update_download_status(download_id, status, message, title, current_track, current_track_count, total_track_count, parent_download_id)
                 except Exception as e:
                     print(f"Error processing status file {filepath} in /api/download_queue: {e}")
 
-    # Filter out older completed/failed tasks to keep the queue clean
-    # For now, let's keep everything, a cleanup mechanism can be added later
-    queue_list = list(downloads_queue.values())
-    return jsonify({"status": "success", "queue": queue_list})
+    # Filter out children (items with parent_download_id)
+    queue_list = [v for v in downloads_queue.values() if not v.get('parent_download_id')]
+    active_download_count = sum(1 for v in queue_list if v.get('status') == 'in_progress')
+    return jsonify({"status": "success", "queue": queue_list, "active_download_count": active_download_count})
 
 @app.route('/')
 def index():
@@ -312,6 +344,12 @@ def get_config():
         "LASTFM_SESSION_KEY": "••••••••" if LASTFM_SESSION_KEY else "",
         "DEEZER_ARL": "••••••••" if DEEZER_ARL else "",
         "DOWNLOAD_METHOD": DOWNLOAD_METHOD,
+        "SOULSEEK_USERNAME": SOULSEEK_USERNAME,
+        "SOULSEEK_PASSWORD": "••••••••" if SOULSEEK_PASSWORD else "",
+        "SOULSEEK_SEARCH_TIMEOUT": SOULSEEK_SEARCH_TIMEOUT,
+        "SOULSEEK_KEEP_ALIVE": SOULSEEK_KEEP_ALIVE,
+        "SOULSEEK_MIN_QUALITY": SOULSEEK_MIN_QUALITY,
+        "SOULSEEK_SHARE_MUSIC": SOULSEEK_SHARE_MUSIC,
         "ALBUM_RECOMMENDATION_ENABLED": ALBUM_RECOMMENDATION_ENABLED,
         "HIDE_DOWNLOAD_FROM_LINK": HIDE_DOWNLOAD_FROM_LINK,
         "HIDE_FRESH_RELEASES": HIDE_FRESH_RELEASES,
@@ -368,7 +406,7 @@ def update_config():
             current_config_content = f.read()
 
         # Define sensitive fields that should not be overwritten if masked
-        sensitive_fields = {'ROOT_ND', 'PASSWORD_ND', 'TOKEN_LB', 'LASTFM_API_KEY', 'LASTFM_API_SECRET', 'LASTFM_SESSION_KEY', 'DEEZER_ARL', 'LLM_API_KEY'}
+        sensitive_fields = {'ROOT_ND', 'PASSWORD_ND', 'TOKEN_LB', 'LASTFM_API_KEY', 'LASTFM_API_SECRET', 'LASTFM_SESSION_KEY', 'DEEZER_ARL', 'LLM_API_KEY', 'SOULSEEK_PASSWORD'}
 
         # Prepare a list to hold the updated lines
         updated_lines = current_config_content.splitlines()
@@ -386,11 +424,13 @@ def update_config():
                 continue
 
             # Determine the string representation for writing to config.py
-            if key in {'LISTENBRAINZ_ENABLED', 'LASTFM_ENABLED', 'ALBUM_RECOMMENDATION_ENABLED', 'HIDE_DOWNLOAD_FROM_LINK', 'HIDE_FRESH_RELEASES', 'LLM_ENABLED'}:
+            if key in {'LISTENBRAINZ_ENABLED', 'LASTFM_ENABLED', 'ALBUM_RECOMMENDATION_ENABLED', 'HIDE_DOWNLOAD_FROM_LINK', 'HIDE_FRESH_RELEASES', 'LLM_ENABLED', 'SOULSEEK_KEEP_ALIVE', 'SOULSEEK_SHARE_MUSIC'}:
                 # Ensure boolean values are written as True/False (Python literal)
                 new_value_str_for_file = str(value) 
             elif key in ('DOWNLOAD_METHOD', 'LLM_PROVIDER'):
                 new_value_str_for_file = f'"{value}"'
+            elif key in {'SOULSEEK_SEARCH_TIMEOUT', 'SOULSEEK_MIN_QUALITY', 'FRESH_RELEASES_DAYS', 'FRESH_RELEASES_CACHE_DURATION', 'DEEZER_MAX_CONCURRENT_REQUESTS'}:
+                new_value_str_for_file = str(int(value))
             else:
                 # For other string values, ensure they are quoted
                 new_value_str_for_file = f'"{value}"' if isinstance(value, str) else str(value)
@@ -476,34 +516,47 @@ def get_listenbrainz_playlist():
 
 @app.route('/api/trigger_listenbrainz_download', methods=['POST'])
 def trigger_listenbrainz_download():
-    print("Attempting to trigger ListenBrainz download via background script...")
+    print("Attempting to trigger ListenBrainz download...")
+
     try:
-        # Check if there are recommendations first
         listenbrainz_api = ListenBrainzAPI(ROOT_LB, TOKEN_LB, USER_LB, LISTENBRAINZ_ENABLED)
         recs = asyncio.run(listenbrainz_api.get_listenbrainz_recommendations())
         if not recs:
             return jsonify({"status": "error", "message": "No ListenBrainz recommendations found. Please check your credentials and try again."}), 400
-        
+
         download_id = str(uuid.uuid4())
+        total = len(recs)
+        is_soulseek = DOWNLOAD_METHOD == "soulseek" and SOULSEEK_USERNAME
+        artist_label = 'ListenBrainz Playlist'
+        title_label = f'{total} Tracks'
+
         downloads_queue[download_id] = {
             'id': download_id,
-            'artist': 'ListenBrainz Playlist',
-            'title': 'Multiple Tracks',
-            'status': 'in_progress',
+            'artist': artist_label,
+            'title': title_label,
+            'status': 'queued',
             'start_time': datetime.now().isoformat(),
-            'message': 'Download initiated.',
+            'message': f'Waiting to download {total} tracks...',
+            'current_track': '',
             'current_track_count': 0,
-            'total_track_count': None  # Will be updated when recommendations are fetched
+            'total_track_count': total,
+            '_type': 'playlist_soulseek' if is_soulseek else 'playlist_deezer',
+            'source': 'listenbrainz',
         }
-        
-        # Execute re-command.py in a separate process for non-blocking download, bypassing playlist check
-        subprocess.Popen([
-            sys.executable, '/app/re-command.py', 
-            '--source', 'listenbrainz', 
-            '--bypass-playlist-check',
-            '--download-id', download_id # Pass the download ID
-        ])
-        return jsonify({"status": "info", "message": "ListenBrainz download initiated in the background."})
+
+        if is_soulseek:
+            downloads_queue[download_id]['_tracks'] = [
+                {'artist': r['artist'], 'title': r['title'],
+                 'album': r.get('album', ''), 'lb_recommendation': True}
+                for r in recs
+            ]
+            os.makedirs(DOWNLOAD_STATUS_DIR, exist_ok=True)
+            with open(os.path.join(DOWNLOAD_STATUS_DIR, f'{download_id}.json'), 'w') as f:
+                json.dump(downloads_queue[download_id], f)
+
+        _get_manager().enqueue(download_id)
+
+        return jsonify({"status": "success", "message": f"Queued {total} tracks for download."})
     except Exception as e:
         print(f"Error triggering ListenBrainz download: {e}")
         return jsonify({"status": "error", "message": f"Error triggering ListenBrainz download: {e}"}), 500
@@ -531,33 +584,47 @@ def get_lastfm_playlist():
 
 @app.route('/api/trigger_lastfm_download', methods=['POST'])
 def trigger_lastfm_download():
-    print("Attempting to trigger Last.fm download via background script...")
+    print("Attempting to trigger Last.fm download...")
+
     try:
-        # Check if there are recommendations first
         lastfm_api = LastFmAPI(LASTFM_API_KEY, LASTFM_API_SECRET, LASTFM_USERNAME, LASTFM_PASSWORD, LASTFM_SESSION_KEY, LASTFM_ENABLED)
         recs = asyncio.run(lastfm_api.get_lastfm_recommendations())
         if not recs:
             return jsonify({"status": "error", "message": "No Last.fm recommendations found. Please check your credentials and try again."}), 400
-        
+
         download_id = str(uuid.uuid4())
+        total = len(recs)
+        is_soulseek = DOWNLOAD_METHOD == "soulseek" and SOULSEEK_USERNAME
+        artist_label = 'Last.fm Playlist'
+        title_label = f'{total} Tracks'
+
         downloads_queue[download_id] = {
             'id': download_id,
-            'artist': 'Last.fm Playlist',
-            'title': 'Multiple Tracks',
-            'status': 'in_progress',
+            'artist': artist_label,
+            'title': title_label,
+            'status': 'queued',
             'start_time': datetime.now().isoformat(),
-            'message': 'Download initiated.',
+            'message': f'Waiting to download {total} tracks...',
+            'current_track': '',
             'current_track_count': 0,
-            'total_track_count': None  # Will be updated when recommendations are fetched
+            'total_track_count': total,
+            '_type': 'playlist_soulseek' if is_soulseek else 'playlist_deezer',
+            'source': 'lastfm',
         }
-        
-        # Execute re-command.py in a separate process for non-blocking download
-        subprocess.Popen([
-            sys.executable, '/app/re-command.py', 
-            '--source', 'lastfm',
-            '--download-id', download_id # Pass the download ID
-        ])
-        return jsonify({"status": "info", "message": "Last.fm download initiated in the background."})
+
+        if is_soulseek:
+            downloads_queue[download_id]['_tracks'] = [
+                {'artist': r['artist'], 'title': r['title'],
+                 'album': r.get('album', ''), 'lb_recommendation': False}
+                for r in recs
+            ]
+            os.makedirs(DOWNLOAD_STATUS_DIR, exist_ok=True)
+            with open(os.path.join(DOWNLOAD_STATUS_DIR, f'{download_id}.json'), 'w') as f:
+                json.dump(downloads_queue[download_id], f)
+
+        _get_manager().enqueue(download_id)
+
+        return jsonify({"status": "success", "message": f"Queued {total} tracks for download."})
     except Exception as e:
         print(f"Error triggering Last.fm download: {e}")
         return jsonify({"status": "error", "message": f"Error triggering Last.fm download: {e}"}), 500
@@ -812,8 +879,6 @@ async def get_llm_playlist():
 
 @app.route('/api/trigger_llm_download', methods=['POST'])
 def trigger_llm_download():
-    # This endpoint will fetch recommendations and then trigger downloads.
-    # For simplicity, it wil be re-fetched. A better implementation might cache the result from get_llm_playlist.
     if not LLM_ENABLED or (not LLM_API_KEY and LLM_PROVIDER != 'llama'):
         return jsonify({"status": "error", "message": "LLM suggestions are not enabled or configured."}), 400
     if LLM_PROVIDER == 'llama' and not LLM_BASE_URL:
@@ -838,115 +903,97 @@ def trigger_llm_download():
         return jsonify({"status": "error", "message": "LLM failed to generate recommendations for download."})
 
     download_id = str(uuid.uuid4())
+    total = len(recommendations)
+    is_soulseek = DOWNLOAD_METHOD == "soulseek" and SOULSEEK_USERNAME
+
     downloads_queue[download_id] = {
         'id': download_id,
         'artist': 'LLM Playlist',
-        'title': f'{len(recommendations)} Tracks',
-        'status': 'in_progress',
+        'title': f'{total} Tracks',
+        'status': 'queued',
         'start_time': datetime.now().isoformat(),
-        'message': 'Download initiated.',
+        'message': f'Waiting to download {total} tracks...',
+        'current_track': '',
         'current_track_count': 0,
-        'total_track_count': len(recommendations)
+        'total_track_count': total,
+        '_type': 'playlist_soulseek' if is_soulseek else 'playlist_deezer',
+        'source': 'llm',
     }
 
-    # Execute downloads in a background thread
-    threading.Thread(target=lambda: asyncio.run(download_llm_recommendations_background(recommendations, download_id))).start()
+    if is_soulseek:
+        downloads_queue[download_id]['_tracks'] = [
+            {'artist': r['artist'], 'title': r['title'],
+             'album': r.get('album', ''), 'lb_recommendation': False}
+            for r in recommendations
+        ]
+        os.makedirs(DOWNLOAD_STATUS_DIR, exist_ok=True)
+        with open(os.path.join(DOWNLOAD_STATUS_DIR, f'{download_id}.json'), 'w') as f:
+            json.dump(downloads_queue[download_id], f)
 
-    return jsonify({"status": "info", "message": f"Started download of {len(recommendations)} tracks from LLM recommendations in the background."})
+    _get_manager().enqueue(download_id)
+
+    return jsonify({"status": "success", "message": f"Queued {total} tracks for download."})
 
 @app.route('/api/trigger_fresh_release_download', methods=['POST'])
 def trigger_fresh_release_download():
     print("Attempting to trigger fresh release album download...")
-    artist = None
     try:
         data = request.get_json()
         artist = data.get('artist')
         album = data.get('album')
         release_date = data.get('release_date')
-        # Global setting for album recommendations
-        is_album_recommendation = ALBUM_RECOMMENDATION_ENABLED
 
         if not artist or not album:
             return jsonify({"status": "error", "message": "Artist and album are required"}), 400
 
-        from downloaders.album_downloader import AlbumDownloader
-        from utils import Tagger
-
-        tagger = Tagger(ALBUM_RECOMMENDATION_COMMENT)
-        # Initialize AlbumDownloader with the album recommendation comment
-        album_downloader = AlbumDownloader(tagger, ALBUM_RECOMMENDATION_COMMENT)
-
         download_id = str(uuid.uuid4())
-        downloads_queue[download_id] = {
-            'id': download_id,
-            'artist': artist,
-            'title': album, # Using album as title for fresh releases
-            'status': 'in_progress',
-            'start_time': datetime.now().isoformat(),
-            'message': 'Download initiated.'
-        }
+        is_soulseek = DOWNLOAD_METHOD == "soulseek" and SOULSEEK_USERNAME
 
-        album_info = {
-            'artist': artist,
-            'album': album,
-            'release_date': release_date,
-            'album_art': None,
-            'download_id': download_id # Pass download_id to the downloader
-        }
-
-        import asyncio
-        print(f"Fresh Release Download Triggered for: Artist={artist}, Album={album}, Release Date={release_date}, Download ID={download_id}")
-        print(f"Album Info sent to downloader: {album_info}")
-
-        try:
-            result = asyncio.run(album_downloader.download_album(album_info, is_album_recommendation=is_album_recommendation))
-        except DeezerAuthError as e:
-            update_download_status(download_id, 'failed', str(e))
-            return jsonify({"status": "error", "message": str(e)}), 401
-
-        # Update the global queue with the final status after download completes
-        if result["status"] == "success":
-            update_download_status(download_id, 'completed', f"Downloaded {len(result.get('files', []))} tracks.")
+        if is_soulseek:
+            deezer_api = DeezerAPI()
+            deezer_link, deezer_data = asyncio.run(deezer_api.get_deezer_album_link(artist, album))
+            if not deezer_link:
+                return jsonify({"status": "error", "message": "Could not find album on Deezer."}), 400
+            album_id = deezer_link.split('/')[-1]
+            deezer_tracks = asyncio.run(deezer_api.get_deezer_album_tracks(album_id))
+            if not deezer_tracks:
+                return jsonify({"status": "error", "message": "Could not fetch track list for album."}), 400
+            total = len(deezer_tracks)
+            downloads_queue[download_id] = {
+                'id': download_id, 'artist': artist, 'title': album,
+                'status': 'queued', 'start_time': datetime.now().isoformat(),
+                'message': f'Waiting to download {total} tracks...',
+                'current_track': '', 'current_track_count': 0, 'total_track_count': total,
+                '_type': 'playlist_soulseek', 'source': 'Fresh Releases',
+                '_tracks': [
+                    {'artist': artist, 'title': t.get('title', 'Unknown'),
+                     'album': album, 'lb_recommendation': False,
+                     'release_date': release_date or ''}
+                    for t in deezer_tracks
+                ],
+            }
+            os.makedirs(DOWNLOAD_STATUS_DIR, exist_ok=True)
+            with open(os.path.join(DOWNLOAD_STATUS_DIR, f'{download_id}.json'), 'w') as f:
+                json.dump(downloads_queue[download_id], f)
         else:
-            update_download_status(download_id, 'failed', result.get('message', 'Download failed.'))
+            downloads_queue[download_id] = {
+                'id': download_id, 'artist': artist, 'title': album,
+                'status': 'queued', 'start_time': datetime.now().isoformat(),
+                'message': 'Waiting in queue...',
+                'current_track': '', 'current_track_count': 0, 'total_track_count': 0,
+                '_type': 'album_deezer', 'source': 'Fresh Releases',
+                '_album_info': {
+                    'artist': artist, 'album': album,
+                    'release_date': release_date or '',
+                },
+            }
 
-        response_message = result["message"] if "message" in result else "Operation completed."
-        debug_output = {
-            "album_info_sent": album_info,
-            "download_result": result,
-            "error_traceback": None
-        }
-
-        if result["status"] == "success":
-            # Organize the downloaded files -> music library
-            navidrome_api_global.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_LIBRARY_PATH)
-            return jsonify({
-                "status": "success",
-                "message": f"Successfully downloaded and organized album {artist} - {album} with {len(result.get('files', []))} tracks.",
-                "debug_info": debug_output
-            })
-        else:
-            return jsonify({
-                "status": "error",
-                "message": response_message,
-                "debug_info": debug_output
-            })
-
+        _get_manager().enqueue(download_id)
+        return jsonify({"status": "success", "message": f"Queued album {artist} - {album} for download."})
     except Exception as e:
-        error_trace = traceback.format_exc()
         print(f"Error triggering fresh release download: {e}")
-        print(error_trace) # Debugging traceback
-
-        debug_output = {
-            "album_info_sent": {'artist': artist, 'album': album, 'release_date': release_date, 'album_art': None},
-            "download_result": {"status": "error", "message": str(e)},
-            "error_traceback": error_trace
-        }
-        return jsonify({
-            "status": "error",
-            "message": f"Error triggering download: {e}",
-            "debug_info": debug_output
-        }), 500
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": f"Error triggering download: {e}"}), 500
 
 @app.route('/api/get_track_preview', methods=['GET'])
 async def get_track_preview():
@@ -966,6 +1013,430 @@ async def get_track_preview():
         print(f"Error getting track preview for {artist} - {title}: {e}")
         return jsonify({"status": "error", "message": f"Error getting track preview: {e}"}), 500
 
+def _get_soulseek_queue():
+    global soulseek_queue
+    if soulseek_queue is None:
+        from downloaders.soulseek_queue import SoulseekQueueManager
+        os.makedirs(TEMP_DOWNLOAD_FOLDER, exist_ok=True)
+        soulseek_queue = SoulseekQueueManager(
+            username=SOULSEEK_USERNAME,
+            password=SOULSEEK_PASSWORD,
+            download_dir=TEMP_DOWNLOAD_FOLDER,
+            music_library_path=MUSIC_LIBRARY_PATH,
+            search_timeout=SOULSEEK_SEARCH_TIMEOUT,
+            keep_alive=SOULSEEK_KEEP_ALIVE,
+            min_quality=SOULSEEK_MIN_QUALITY,
+            share_music=SOULSEEK_SHARE_MUSIC,
+        )
+        soulseek_queue.start()
+    return soulseek_queue
+
+# --- Queue Manager (Background Worker) ---
+class QueueManager:
+    def __init__(self):
+        self._thread = None
+        self._running = False
+
+    def start(self):
+        if self._running:
+            return
+        self._running = True
+        self._thread = threading.Thread(target=self._worker_loop, daemon=True)
+        self._thread.start()
+        print("QueueManager worker started.")
+
+    def stop(self):
+        self._running = False
+
+    def enqueue(self, download_id):
+        """Mark an existing downloads_queue entry as queued and notify the worker."""
+        if download_id in downloads_queue:
+            downloads_queue[download_id]['status'] = 'queued'
+
+    def cancel(self, download_id):
+        """Cancel a download by ID. Aborts active transfers and cleans partial files."""
+        global _current_download_id, _cancel_event
+        if download_id == _current_download_id:
+            _cancel_event.set()
+        cancel_file = os.path.join(DOWNLOAD_STATUS_DIR, f"{download_id}.cancel")
+        os.makedirs(DOWNLOAD_STATUS_DIR, exist_ok=True)
+        with open(cancel_file, 'w') as f:
+            f.write("cancelled")
+        status_file = os.path.join(DOWNLOAD_STATUS_DIR, f"{download_id}.json")
+        if os.path.exists(status_file):
+            try:
+                with open(status_file) as f:
+                    data = json.load(f)
+                data['status'] = 'failed'
+                data['message'] = 'Cancelled by user'
+                with open(status_file, 'w') as f:
+                    json.dump(data, f)
+            except Exception:
+                pass
+        update_download_status(download_id, "failed", "Cancelled by user")
+        return True
+
+    def _worker_loop(self):
+        while self._running:
+            try:
+                download_id = self._dequeue_next()
+                if download_id is None:
+                    time.sleep(2)
+                    continue
+                global _current_download_id, _cancel_event
+                _current_download_id = download_id
+                _cancel_event.clear()
+
+                item = downloads_queue.get(download_id)
+                if not item:
+                    _current_download_id = None
+                    continue
+
+                if _cancel_event.is_set():
+                    update_download_status(download_id, 'failed', 'Cancelled')
+                    _current_download_id = None
+                    continue
+
+                download_type = item.get('_type', 'track_deezer')
+                try:
+                    if download_type == 'track_deezer':
+                        self._process_track_deezer(download_id, item)
+                    elif download_type == 'track_soulseek':
+                        self._process_track_soulseek(download_id, item)
+                    elif download_type == 'playlist_soulseek':
+                        self._process_playlist_soulseek(download_id, item)
+                    elif download_type == 'playlist_deezer':
+                        self._process_playlist_deezer(download_id, item)
+                    elif download_type == 'album_deezer':
+                        self._process_album_deezer(download_id, item)
+                    elif download_type == 'link_download':
+                        self._process_link(download_id, item)
+                except Exception as e:
+                    if not _cancel_event.is_set():
+                        update_download_status(download_id, 'failed', str(e))
+                        print(f"QueueManager: Error processing {download_id}: {e}")
+                        traceback.print_exc()
+
+                _current_download_id = None
+            except Exception as e:
+                print(f"QueueManager worker error: {e}")
+                time.sleep(2)
+
+    def _dequeue_next(self):
+        """Find the oldest queued item and set it to in_progress."""
+        queued = []
+        for k, v in downloads_queue.items():
+            if v.get('status') == 'queued':
+                try:
+                    start_time = datetime.fromisoformat(v['start_time'])
+                except Exception:
+                    start_time = datetime.min
+                queued.append((start_time, k))
+        if not queued:
+            return None
+        queued.sort(key=lambda x: x[0])
+        download_id = queued[0][1]
+        downloads_queue[download_id]['status'] = 'in_progress'
+        self._write_status_file(download_id, 'in_progress', 
+                                downloads_queue[download_id].get('message', 'Processing...'))
+        return download_id
+
+    def _poll_status_file(self, download_id, interval=2):
+        """Poll a status file until it reaches a terminal state or cancel is set."""
+        while self._running and not _cancel_event.is_set():
+            status_file = os.path.join(DOWNLOAD_STATUS_DIR, f"{download_id}.json")
+            if os.path.exists(status_file):
+                try:
+                    with open(status_file) as f:
+                        data = json.load(f)
+                    status = data.get('status')
+                    if status in ('completed', 'failed'):
+                        update_download_status(
+                            download_id, status, data.get('message'),
+                            current_track=data.get('current_track'),
+                            current_track_count=data.get('current_track_count'),
+                            total_track_count=data.get('total_track_count'),
+                        )
+                        return status == 'completed'
+                except Exception:
+                    pass
+            time.sleep(interval)
+        return False
+
+    def _process_track_deezer(self, download_id, item):
+        if _cancel_event.is_set():
+            return
+        update_download_status(download_id, 'in_progress', 'Download initiated.')
+        self._spawn_deezer_worker({
+            'mode': 'track',
+            'download_id': download_id,
+            'artist': item['artist'],
+            'title': item['title'],
+            'album': '',
+            'release_date': '',
+            'recording_mbid': '',
+            'source': item.get('source', 'Manual'),
+            'lb_recommendation': item.get('lb_recommendation', False),
+            'album_recommendation_comment': ALBUM_RECOMMENDATION_COMMENT,
+            'status_dir': DOWNLOAD_STATUS_DIR,
+            'music_library_path': MUSIC_LIBRARY_PATH,
+            'temp_download_folder': TEMP_DOWNLOAD_FOLDER,
+        }, download_id)
+
+    def _spawn_deezer_worker(self, request_data, download_id):
+        """Run a Deezer track/album download in a subprocess (killable on cancel)."""
+        req_file = os.path.join(TEMP_DOWNLOAD_FOLDER, f'_deezreq_{download_id}.json')
+        os.makedirs(TEMP_DOWNLOAD_FOLDER, exist_ok=True)
+        worker_script = os.path.join(os.path.dirname(__file__), 'deezer_worker.py')
+        try:
+            with open(req_file, 'w') as f:
+                json.dump(request_data, f)
+
+            proc = subprocess.Popen([sys.executable, worker_script, req_file])
+
+            while self._running and not _cancel_event.is_set():
+                ret = proc.poll()
+                if ret is not None:
+                    break
+                time.sleep(0.5)
+
+            if _cancel_event.is_set():
+                proc.terminate()
+                try:
+                    proc.wait(timeout=3)
+                except Exception:
+                    proc.kill()
+
+            # Read result from status file
+            status_file = os.path.join(DOWNLOAD_STATUS_DIR, f"{download_id}.json")
+            if os.path.exists(status_file):
+                try:
+                    with open(status_file) as f:
+                        data = json.load(f)
+                    s = data.get('status')
+                    if s == 'completed':
+                        update_download_status(download_id, 'completed',
+                                               data.get('message', 'Done'))
+                    elif s == 'failed':
+                        update_download_status(download_id, 'failed',
+                                               data.get('message', 'Failed'))
+                except Exception:
+                    pass
+        finally:
+            try:
+                if os.path.exists(req_file):
+                    os.remove(req_file)
+            except Exception:
+                pass
+
+    def _write_status_file(self, download_id, status, message, **kw):
+        os.makedirs(DOWNLOAD_STATUS_DIR, exist_ok=True)
+        data = {"status": status, "message": message, "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S")}
+        data.update(kw)
+        with open(os.path.join(DOWNLOAD_STATUS_DIR, f"{download_id}.json"), 'w') as f:
+            json.dump(data, f)
+
+    def _process_track_soulseek(self, download_id, item):
+        if _cancel_event.is_set():
+            return
+        queue = _get_soulseek_queue()
+        self._write_status_file(download_id, 'in_progress', 'Queued to Soulseek...',
+                                title=f"{item['artist']} - {item['title']}")
+        update_download_status(download_id, 'in_progress', 'Queued to Soulseek...')
+        queue.enqueue(
+            download_id=download_id,
+            artist=item['artist'],
+            title=item['title'],
+            source=item.get('source', 'Manual'),
+            lb_recommendation=item.get('lb_recommendation', False),
+        )
+        self._poll_status_file(download_id)
+
+    def _process_playlist_soulseek(self, download_id, item):
+        if _cancel_event.is_set():
+            return
+        tracks = item.get('_tracks', [])
+        total = len(tracks)
+        source = item.get('source', 'Manual')
+        update_download_status(
+            download_id, 'in_progress',
+            f'Starting download of {total} tracks...',
+            current_track_count=0, total_track_count=total,
+        )
+        queue = _get_soulseek_queue()
+        for track in tracks:
+            if _cancel_event.is_set():
+                return
+            track_id = str(uuid.uuid4())
+            queue.enqueue(
+                download_id=track_id,
+                artist=track['artist'],
+                title=track['title'],
+                source=source,
+                lb_recommendation=track.get('lb_recommendation', False),
+                album=track.get('album', ''),
+                release_date=track.get('release_date', ''),
+                parent_download_id=download_id,
+                parent_total=total,
+            )
+        self._poll_status_file(download_id)
+
+    def _process_playlist_deezer(self, download_id, item):
+        if _cancel_event.is_set():
+            return
+        source = item.get('source', 'listenbrainz')
+
+        if source == 'llm':
+            self._process_llm_deezer(download_id, item)
+            return
+
+        update_download_status(download_id, 'in_progress', 'Starting subprocess...')
+        bypass = ['--bypass-playlist-check'] if source == 'listenbrainz' else []
+        cmd = [sys.executable, '/app/re-command.py', '--source', source] + bypass + ['--download-id', download_id]
+        proc = subprocess.Popen(cmd)
+        while self._running and not _cancel_event.is_set():
+            ret = proc.poll()
+            if ret is not None:
+                break
+            time.sleep(1)
+        if _cancel_event.is_set():
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                proc.kill()
+
+    def _process_llm_deezer(self, download_id, item):
+        """Download LLM recommendations inline via Deezer."""
+        update_download_status(download_id, 'in_progress', 'Starting LLM download...')
+        from downloaders.track_downloader import TrackDownloader
+        from utils import Tagger
+
+        tagger = Tagger(ALBUM_RECOMMENDATION_COMMENT)
+        track_downloader = TrackDownloader(tagger)
+
+        total_tracks = item.get('total_track_count', 0)
+        downloaded_count = 0
+
+        listenbrainz_api = ListenBrainzAPI(ROOT_LB, TOKEN_LB, USER_LB, LISTENBRAINZ_ENABLED)
+        scrobbles = asyncio.run(listenbrainz_api.get_weekly_scrobbles())
+        if not scrobbles:
+            update_download_status(download_id, 'failed', 'No scrobbles found.')
+            return
+
+        llm_api = LlmAPI(
+            provider=LLM_PROVIDER,
+            gemini_api_key=LLM_API_KEY if LLM_PROVIDER == 'gemini' else None,
+            openrouter_api_key=LLM_API_KEY if LLM_PROVIDER == 'openrouter' else None,
+            llama_api_key=LLM_API_KEY if LLM_PROVIDER == 'llama' else None,
+            model_name=globals().get('LLM_MODEL_NAME'),
+            base_url=globals().get('LLM_BASE_URL') if LLM_PROVIDER == 'llama' else None
+        )
+        recommendations = llm_api.get_recommendations(scrobbles)
+
+        if not recommendations:
+            update_download_status(download_id, 'failed', 'LLM returned no recommendations.')
+            return
+
+        total = len(recommendations)
+        update_download_status(
+            download_id, 'in_progress',
+            f'Downloading 0/{total} tracks...',
+            current_track_count=0, total_track_count=total,
+        )
+
+        for i, song in enumerate(recommendations):
+            if _cancel_event.is_set():
+                update_download_status(download_id, 'failed', 'Cancelled')
+                return
+
+            song['source'] = 'LLM'
+            song['recording_mbid'] = ''
+            song['release_date'] = ''
+            song['download_id'] = download_id
+
+            update_download_status(
+                download_id, 'in_progress',
+                f'Downloading track {i+1}/{total}: {song["artist"]} - {song["title"]}',
+                current_track=song['artist'] + ' - ' + song['title'],
+                current_track_count=downloaded_count,
+                total_track_count=total,
+            )
+
+            try:
+                downloaded_path = asyncio.run(track_downloader.download_track(song))
+            except Exception as e:
+                if 'DeezerAuthError' in str(type(e)):
+                    update_download_status(download_id, 'failed', str(e))
+                    return
+                print(f"LLM Deezer: failed to download {song['artist']} - {song['title']}: {e}")
+                continue
+
+            if downloaded_path:
+                downloaded_count += 1
+                update_download_status(
+                    download_id, 'in_progress',
+                    f'Downloaded track {i+1}/{total}',
+                    current_track_count=downloaded_count,
+                )
+
+        if not _cancel_event.is_set():
+            navidrome_api_global.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_LIBRARY_PATH)
+            update_download_status(
+                download_id, 'completed',
+                f'Download complete. Processed {downloaded_count}/{total} tracks.',
+                current_track_count=downloaded_count,
+            )
+
+    def _process_link(self, download_id, item):
+        if _cancel_event.is_set():
+            return
+        update_download_status(download_id, 'in_progress', 'Processing link...')
+        link = item.get('_link', '')
+        lb_recommendation = item.get('lb_recommendation', False)
+        try:
+            result = asyncio.run(link_downloader_global.download_from_url(
+                link, lb_recommendation=lb_recommendation, download_id=download_id))
+        except Exception as e:
+            if 'DeezerAuthError' in str(type(e)):
+                update_download_status(download_id, 'failed', str(e))
+            else:
+                raise
+            return
+        if result and not _cancel_event.is_set():
+            update_download_status(download_id, 'completed',
+                                   f"Downloaded {len(result)} files.")
+        elif not _cancel_event.is_set():
+            update_download_status(download_id, 'failed',
+                                   "No files downloaded. Track may not be available.")
+
+    def _process_album_deezer(self, download_id, item):
+        if _cancel_event.is_set():
+            return
+        album_info = item.get('_album_info', {})
+        update_download_status(download_id, 'in_progress', 'Downloading album...')
+        self._spawn_deezer_worker({
+            'mode': 'album',
+            'download_id': download_id,
+            'artist': album_info.get('artist', ''),
+            'album': album_info.get('album', ''),
+            'release_date': album_info.get('release_date', ''),
+            'is_album_recommendation': ALBUM_RECOMMENDATION_ENABLED,
+            'album_recommendation_comment': ALBUM_RECOMMENDATION_COMMENT,
+            'status_dir': DOWNLOAD_STATUS_DIR,
+            'music_library_path': MUSIC_LIBRARY_PATH,
+            'temp_download_folder': TEMP_DOWNLOAD_FOLDER,
+        }, download_id)
+
+
+def _get_manager():
+    global _download_manager
+    if _download_manager is None:
+        _download_manager = QueueManager()
+        _download_manager.start()
+    return _download_manager
+
+
 @app.route('/api/trigger_track_download', methods=['POST'])
 def trigger_track_download():
     print("Attempting to trigger individual track download...")
@@ -973,100 +1444,81 @@ def trigger_track_download():
         data = request.get_json()
         artist = data.get('artist')
         title = data.get('title')
-        lb_recommendation = data.get('lb_recommendation', False)  # Get the lb_recommendation flag
-        source = data.get('source', 'Manual') # Get the source
+        lb_recommendation = data.get('lb_recommendation', False)
+        source = data.get('source', 'Manual')
 
         if not artist or not title:
             return jsonify({"status": "error", "message": "Artist and title are required"}), 400
 
-        # Use TrackDownloader
-        tagger = Tagger(ALBUM_RECOMMENDATION_COMMENT)
-        track_downloader = TrackDownloader(tagger)
+        if DOWNLOAD_METHOD == "soulseek" and not SOULSEEK_USERNAME:
+            return jsonify({"status": "error", "message": "Soulseek username not configured. Set it in Settings."}), 400
 
         download_id = str(uuid.uuid4())
+        is_soulseek = DOWNLOAD_METHOD == "soulseek" and SOULSEEK_USERNAME
+
         downloads_queue[download_id] = {
             'id': download_id,
             'artist': artist,
             'title': title,
-            'status': 'in_progress',
+            'status': 'queued',
             'start_time': datetime.now().isoformat(),
-            'message': 'Download initiated.'
-        }
-
-        track_info = {
-            'artist': artist,
-            'title': title,
-            'album': '',
-            'release_date': '', # Will be fetched later
-            'recording_mbid': '',
+            'message': 'Waiting in queue...',
+            '_type': 'track_soulseek' if is_soulseek else 'track_deezer',
             'source': source,
-            'download_id': download_id # Pass download_id to the downloader
+            'lb_recommendation': lb_recommendation,
         }
 
-        try:
-            downloaded_path = asyncio.run(track_downloader.download_track(track_info, lb_recommendation=lb_recommendation))
-        except DeezerAuthError as e:
-            update_download_status(download_id, 'failed', str(e))
-            return jsonify({"status": "error", "message": str(e)}), 401
-        
-        if downloaded_path:
-            update_download_status(download_id, 'completed', "Download completed.")
-            # Organize the downloaded files -> music library
-            navidrome_api_global.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_LIBRARY_PATH)
-            return jsonify({"status": "success", "message": f"Successfully downloaded and organized track: {artist} - {title}."})
-        else:
-            update_download_status(download_id, 'failed', "Download failed. See logs for details.")
-            return jsonify({"status": "error", "message": f"Failed to download track: {artist} - {title}."})
+        if is_soulseek:
+            os.makedirs(DOWNLOAD_STATUS_DIR, exist_ok=True)
+            with open(os.path.join(DOWNLOAD_STATUS_DIR, f'{download_id}.json'), 'w') as f:
+                json.dump(downloads_queue[download_id], f)
 
+        _get_manager().enqueue(download_id)
+
+        return jsonify({
+            "status": "success",
+            "message": f"Track queued for download: {artist} - {title}.",
+            "download_id": download_id
+        })
     except Exception as e:
         print(f"Error triggering track download: {e}")
-        if 'download_id' in locals():
-            update_download_status(download_id, 'failed', f"An error occurred: {e}")
         return jsonify({"status": "error", "message": f"Error triggering download: {e}"}), 500
 
 @app.route('/api/download_from_link', methods=['POST'])
-async def download_from_link():
+def download_from_link():
     print("Attempting to download from link...")
     try:
         data = request.get_json()
         link = data.get('link')
-        lb_recommendation = data.get('lb_recommendation', False) # Get the checkbox value, default to False
+        lb_recommendation = data.get('lb_recommendation', False)
 
-        # Auto-detect ListenBrainz playlist URLs and set lb_recommendation=True
         if 'listenbrainz.org/playlist' in link.lower():
             lb_recommendation = True
             print(f"Detected ListenBrainz playlist URL, automatically setting lb_recommendation=True")
 
         if not link:
             return jsonify({"status": "error", "message": "Link is required"}), 400
+
         download_id = str(uuid.uuid4())
         downloads_queue[download_id] = {
             'id': download_id,
             'artist': 'Link Download',
-            'title': link,
-            'status': 'in_progress',
+            'title': link[:80] + ('...' if len(link) > 80 else ''),
+            'status': 'queued',
             'start_time': datetime.now().isoformat(),
-            'message': 'Download initiated.'
+            'message': 'Waiting in queue...',
+            '_type': 'link_download',
+            '_link': link,
+            'lb_recommendation': lb_recommendation,
         }
-        
-        # Use globally initialized link_downloader
-        try:
-            result = await link_downloader_global.download_from_url(link, lb_recommendation=lb_recommendation, download_id=download_id)
-        except DeezerAuthError as e:
-            update_download_status(download_id, 'failed', str(e))
-            return jsonify({"status": "error", "message": str(e)}), 401
 
-        if result:
-            update_download_status(download_id, 'completed', f"Downloaded {len(result)} files.")
-            return jsonify({"status": "success", "message": f"Successfully downloaded and organized {len(result)} files from {link}."})
-        else:
-            update_download_status(download_id, 'failed', f"No files downloaded from {link}. The track may not be available on Deezer.")
-            return jsonify({"status": "info", "message": f"No files downloaded from {link}. The track may not be available on Deezer."})
+        _get_manager().enqueue(download_id)
 
+        return jsonify({"status": "success", "message": f"Link queued for download.", "download_id": download_id})
     except Exception as e:
         print(f"Error downloading from link: {e}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
-        return jsonify({"status": "error", "message": f"Error initiating download from link: {e}"}), 500
+        return jsonify({"status": "error", "message": f"Error queuing download: {e}"}), 500
 
 @app.route('/api/get_deezer_album_art', methods=['GET'])
 async def get_deezer_album_art():
@@ -1232,53 +1684,81 @@ def handle_exception(e):
     print(f"Unhandled exception: {e}", file=sys.stderr)
     return jsonify({"status": "error", "message": "An unexpected error occurred.", "details": str(e)}), 500
 
-async def download_llm_recommendations_background(recommendations, download_id):
-    """Helper function to download tracks from LLM recommendations in the background."""
-    tagger = Tagger(album_recommendation_comment=ALBUM_RECOMMENDATION_COMMENT)
-    track_downloader = TrackDownloader(tagger)
-    
-    total_tracks = len(recommendations)
-    downloaded_count = 0
-    for i, song in enumerate(recommendations):
-        update_download_status(
-            download_id, 
-            'in_progress', 
-            f"Downloading track {i+1}/{total_tracks}: {song['artist']} - {song['title']}",
-            current_track_count=downloaded_count,
-            total_track_count=total_tracks
-        )
-        
-        song['source'] = 'LLM'
-        song['recording_mbid'] = '' # Not available from LLM
-        song['release_date'] = '' # Not available from LLM
-        
-        try:
-            downloaded_path = await track_downloader.download_track(song)
-        except DeezerAuthError as e:
-            update_download_status(download_id, 'failed', str(e))
-            return
+@app.route('/api/cancel_download', methods=['POST'])
+def cancel_download():
+    data = request.get_json()
+    download_id = data.get('download_id')
+    if not download_id:
+        return jsonify({"status": "error", "message": "download_id is required"}), 400
 
-        if downloaded_path:
-            downloaded_count += 1
-            update_download_status(
-                download_id,
-                'in_progress',
-                f"Downloaded track {i+1}/{total_tracks}",
-                current_track_count=downloaded_count
-            )
-        else:
-            print(f"Failed to download LLM recommendation: {song['artist']} - {song['title']}")
+    try:
+        manager = _get_manager()
+        manager.cancel(download_id)
 
-    # Organize files after all downloads are attempted
-    navidrome_api_global.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_LIBRARY_PATH)
+        # Also cancel in soulseek queue manager if active
+        global soulseek_queue
+        if soulseek_queue:
+            soulseek_queue.cancel(download_id)
 
-    # Set final status
-    update_download_status(
-        download_id, 
-        'completed', 
-        f"Download complete. Processed {downloaded_count}/{total_tracks} tracks.",
-        current_track_count=downloaded_count
-    )
+        # Remove all files for this download and its children
+        ids_to_clean = {download_id}
+        if os.path.exists(DOWNLOAD_STATUS_DIR):
+            for fname in os.listdir(DOWNLOAD_STATUS_DIR):
+                if fname.endswith('.json'):
+                    try:
+                        with open(os.path.join(DOWNLOAD_STATUS_DIR, fname)) as f:
+                            data = json.load(f)
+                        if data.get('parent_download_id') == download_id:
+                            ids_to_clean.add(fname[:-5])
+                    except Exception:
+                        pass
+
+        for dl_id in ids_to_clean:
+            for suffix in ['.json', '.cancel']:
+                fpath = os.path.join(DOWNLOAD_STATUS_DIR, f"{dl_id}{suffix}")
+                if os.path.exists(fpath):
+                    try:
+                        os.remove(fpath)
+                    except Exception:
+                        pass
+            if dl_id in downloads_queue:
+                del downloads_queue[dl_id]
+
+        return jsonify({"status": "success", "message": "Download cancelled."})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/flush_queue', methods=['POST'])
+def flush_queue():
+    return jsonify({"status": "success", "message": "OK"})
+
+
+@app.route('/api/cleanup_queue', methods=['POST'])
+def cleanup_queue():
+    """Remove completed/failed/cancelled entries from the queue."""
+    try:
+        removed = 0
+        terminal_ids = []
+        for dl_id, item in list(downloads_queue.items()):
+            if item.get('status') in ('completed', 'failed'):
+                terminal_ids.append(dl_id)
+
+        for dl_id in terminal_ids:
+            if dl_id in downloads_queue:
+                del downloads_queue[dl_id]
+            for suffix in ['.json', '.cancel']:
+                fpath = os.path.join(DOWNLOAD_STATUS_DIR, f"{dl_id}{suffix}")
+                if os.path.exists(fpath):
+                    try:
+                        os.remove(fpath)
+                    except Exception:
+                        pass
+            removed += 1
+
+        return jsonify({"status": "success", "message": f"Cleaned up {removed} entries.", "removed": removed})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == '__main__':
     download_poller_thread = threading.Thread(target=poll_download_statuses, daemon=True)

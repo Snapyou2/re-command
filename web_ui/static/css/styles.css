@@ -453,32 +453,111 @@ button:disabled:hover {
     display: flex;
     align-items: center;
     gap: 10px;
+    flex-shrink: 0;
 }
 
-/* Current track display */
-.current-track-info {
+/* Queue item layout */
+.queue-item-main {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+}
+
+/* Progress bar section */
+.progress-section {
     margin-top: 8px;
-    padding: 8px 12px;
-    background-color: rgba(65, 66, 224, 0.15);
-    border-radius: 6px;
-    border-left: 3px solid var(--primary-color);
+    width: 100%;
 }
 
-.current-track-label {
-    font-size: 0.75em;
-    color: #888;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 2px;
+.progress-bar-bg {
+    width: 100%;
+    height: 6px;
+    background-color: #3a3a5a;
+    border-radius: 3px;
+    overflow: hidden;
 }
 
-.current-track-name {
-    font-size: 0.9em;
-    color: var(--text-color);
-    font-weight: 500;
+.progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+    border-radius: 3px;
+    transition: width 0.5s ease;
+}
+
+.progress-active .progress-bar-fill {
+    background: linear-gradient(90deg, var(--primary-color), var(--accent-color));
+}
+
+.progress-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+    font-size: 0.8em;
+    color: #b0b0b0;
+}
+
+.progress-count {
+    font-weight: 600;
+    color: var(--accent-color);
     white-space: nowrap;
+}
+
+.progress-track {
+    flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #999;
+}
+
+/* Status messages */
+.status-msg {
+    font-size: 0.8em;
+    margin-top: 4px;
+    width: 100%;
+}
+
+.status-error {
+    color: var(--error-color);
+}
+
+.status-success {
+    color: var(--success-color);
+}
+
+.status-queued {
+    color: #888;
+}
+
+/* Cleanup button */
+.cleanup-btn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: none;
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 5px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.8em;
+    opacity: 0.7;
+    transition: all 0.2s ease;
+    margin: 0;
+}
+
+.cleanup-btn:hover {
+    opacity: 1;
+    border-color: var(--success-color);
+    color: var(--success-color);
+    background-color: rgba(40, 167, 69, 0.1);
+    transform: none;
+}
+
+.cleanup-btn svg {
+    flex-shrink: 0;
 }
 
 /* Last.fm Auth Notification */
@@ -833,6 +912,27 @@ button:disabled:hover {
 
 .download-queue-modal .close-btn-svg:hover {
     opacity: 1;
+}
+
+/* Queue toolbar above the title */
+.queue-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+    flex-shrink: 0;
+}
+
+.queue-count {
+    color: var(--info-color);
+    font-size: 0.8em;
+    font-weight: 500;
+}
+
+.queue-title {
+    margin: 0 0 12px 0;
+    font-size: 1.3em;
+    flex-shrink: 0;
 }
 
 @keyframes spin {

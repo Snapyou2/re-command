@@ -67,7 +67,8 @@ document.addEventListener('alpine:init', () => {
             const hasNavidrome = (this.config.ROOT_ND && this.config.ROOT_ND !== '') ||
                 (this.config.USER_ND && this.config.USER_ND !== '') ||
                 (this.config.PASSWORD_ND && this.config.PASSWORD_ND !== '');
-            const hasAnyConfig = hasNavidrome || (this.config.DEEZER_ARL && this.config.DEEZER_ARL !== '');
+            const hasSoulseek = this.config.SOULSEEK_USERNAME && this.config.SOULSEEK_USERNAME !== '';
+            const hasAnyConfig = hasNavidrome || (this.config.DEEZER_ARL && this.config.DEEZER_ARL !== '') || hasSoulseek;
             this.hasAnyConfig = hasAnyConfig;
             this.showListenBrainz = this.config.LISTENBRAINZ_ENABLED;
             this.showFreshReleases = this.config.LISTENBRAINZ_ENABLED && !this.config.HIDE_FRESH_RELEASES;
@@ -158,6 +159,21 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
+        async cleanupQueue() {
+            try {
+                const data = await API.cleanupQueue();
+                if (data.status === 'success') {
+                    this.showToast('success', `Cleaned up ${data.removed} entries`);
+                    await this.fetchDownloadQueue();
+                } else {
+                    this.showToast('error', data.message || 'Failed to cleanup queue');
+                }
+            } catch (error) {
+                console.error('Error cleaning up queue:', error);
+                this.showToast('error', 'Failed to cleanup queue');
+            }
+        },
+
         async fetchDownloadQueue() {
             try {
                 const data = await API.getDownloadQueue();
@@ -239,6 +255,12 @@ document.addEventListener('alpine:init', () => {
                     LASTFM_PASSWORD: document.getElementById('lastfmPassword').value.trim(),
                     DEEZER_ARL: document.getElementById('deezerArl').value.trim(),
                     DOWNLOAD_METHOD: document.getElementById('downloadMethod').value,
+                    SOULSEEK_USERNAME: document.getElementById('soulseekUsername')?.value.trim() || '',
+                    SOULSEEK_PASSWORD: document.getElementById('soulseekPassword')?.value.trim() || '',
+                    SOULSEEK_SEARCH_TIMEOUT: parseInt(document.getElementById('soulseekTimeout')?.value) || 15,
+                    SOULSEEK_KEEP_ALIVE: document.getElementById('soulseekKeepAlive')?.checked ?? true,
+                    SOULSEEK_MIN_QUALITY: [128, 192, 320, 0][parseInt(document.getElementById('soulseekMinQuality')?.value) || 0] ?? 128,
+                    SOULSEEK_SHARE_MUSIC: document.getElementById('soulseekShareMusic')?.checked ?? false,
                     ALBUM_RECOMMENDATION_ENABLED: document.getElementById('albumRecommendationEnabled').checked,
                     HIDE_DOWNLOAD_FROM_LINK: document.getElementById('hideDownloadFromLink').checked,
                     HIDE_FRESH_RELEASES: document.getElementById('hideFreshReleases').checked,
@@ -379,62 +401,28 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
-        get canStartDownload() {
-            return this.activeDownloadCount < this.maxConcurrentDownloads;
-        },
-
         async triggerListenBrainzDownload() {
             const data = await API.triggerListenBrainzDownload();
             this.showToast(data.status, data.message);
-            if (data.status === 'error') {
-                this.activeDownloadCount = data.active_count || this.activeDownloadCount;
-            } else {
-                this.isQueuePanelOpen = true;
-                document.body.classList.add('download-queue-panel-open');
-                if (data.queued) {
-                    this.fetchDownloadQueue();
-                } else {
-                    this.stopQueuePolling();
-                    this.currentPollInterval = 1500;
-                    this.startQueuePolling();
-                }
-            }
+            this.isQueuePanelOpen = true;
+            document.body.classList.add('download-queue-panel-open');
+            this.fetchDownloadQueue();
         },
 
         async triggerLastFmDownload() {
             const data = await API.triggerLastFmDownload();
             this.showToast(data.status, data.message);
-            if (data.status === 'error') {
-                this.activeDownloadCount = data.active_count || this.activeDownloadCount;
-            } else {
-                this.isQueuePanelOpen = true;
-                document.body.classList.add('download-queue-panel-open');
-                if (data.queued) {
-                    this.fetchDownloadQueue();
-                } else {
-                    this.stopQueuePolling();
-                    this.currentPollInterval = 1500;
-                    this.startQueuePolling();
-                }
-            }
+            this.isQueuePanelOpen = true;
+            document.body.classList.add('download-queue-panel-open');
+            this.fetchDownloadQueue();
         },
 
         async triggerLlmDownload() {
             const data = await API.triggerLlmDownload();
             this.showToast(data.status, data.message);
-            if (data.status === 'error') {
-                this.activeDownloadCount = data.active_count || this.activeDownloadCount;
-            } else {
-                this.isQueuePanelOpen = true;
-                document.body.classList.add('download-queue-panel-open');
-                if (data.queued) {
-                    this.fetchDownloadQueue();
-                } else {
-                    this.stopQueuePolling();
-                    this.currentPollInterval = 1500;
-                    this.startQueuePolling();
-                }
-            }
+            this.isQueuePanelOpen = true;
+            document.body.classList.add('download-queue-panel-open');
+            this.fetchDownloadQueue();
         },
 
         async downloadFreshRelease(artist, album, releaseDate) {
@@ -442,19 +430,9 @@ document.addEventListener('alpine:init', () => {
                 artist, album, releaseDate, this.albumRecommendationEnabled
             );
             this.showToast(data.status, data.message);
-            if (data.status === 'error') {
-                this.activeDownloadCount = data.active_count || this.activeDownloadCount;
-            } else {
-                this.isQueuePanelOpen = true;
-                document.body.classList.add('download-queue-panel-open');
-                if (data.queued) {
-                    this.fetchDownloadQueue();
-                } else {
-                    this.stopQueuePolling();
-                    this.currentPollInterval = 1500;
-                    this.startQueuePolling();
-                }
-            }
+            this.isQueuePanelOpen = true;
+            document.body.classList.add('download-queue-panel-open');
+            this.fetchDownloadQueue();
         },
 
         async downloadFromLink(link) {
@@ -462,48 +440,19 @@ document.addEventListener('alpine:init', () => {
                 this.showToast('error', 'Please paste a music link to download.');
                 return;
             }
-            const tempId = 'temp-link-' + Date.now();
-            this.downloadQueue.unshift({
-                id: tempId,
-                artist: 'Link Download',
-                title: link.substring(0, 50) + (link.length > 50 ? '...' : ''),
-                status: 'pending',
-                start_time: new Date().toISOString(),
-                message: 'Processing link...'
-            });
-            this.isQueuePanelOpen = true;
-            document.body.classList.add('download-queue-panel-open');
-            this.activeDownloadCount++;
             const data = await API.downloadFromLink(link);
             this.showToast(data.status, data.message);
-            if (data.status === 'error') {
-                this.activeDownloadCount = data.active_count || this.activeDownloadCount;
-                this.downloadQueue = this.downloadQueue.filter(item => item.id !== tempId);
-            } else {
-                const item = this.downloadQueue.find(i => i.id === tempId);
-                if (item) item.status = 'in_progress';
-                this.stopQueuePolling();
-                this.currentPollInterval = 1500;
-                this.startQueuePolling();
-            }
+            this.isQueuePanelOpen = true;
+            document.body.classList.add('download-queue-panel-open');
+            this.fetchDownloadQueue();
         },
 
         async downloadTrack(artist, title, lbRecommendation = false, source = 'Manual') {
             const data = await API.triggerTrackDownload(artist, title, lbRecommendation, source);
             this.showToast(data.status, data.message);
-            if (data.status === 'error') {
-                this.activeDownloadCount = data.active_count || this.activeDownloadCount;
-            } else {
-                this.isQueuePanelOpen = true;
-                document.body.classList.add('download-queue-panel-open');
-                if (data.queued) {
-                    this.fetchDownloadQueue();
-                } else {
-                    this.stopQueuePolling();
-                    this.currentPollInterval = 1500;
-                    this.startQueuePolling();
-                }
-            }
+            this.isQueuePanelOpen = true;
+            document.body.classList.add('download-queue-panel-open');
+            this.fetchDownloadQueue();
         },
 
         async playTrackPreview(artist, title, button) {

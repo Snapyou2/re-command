@@ -7,6 +7,9 @@ services:
     container_name: re-command-container
     ports:
       - "5000:5000"
+      - "60000-60001:60000-60001"
+    networks:
+      - re-command-network
     volumes:
       - ${MUSIC_PATH:-/home/user/Music}:/app/music
       - ${MUSIC_PATH:-/home/user/Music}/.tempfolder:/app/temp_downloads
@@ -38,8 +41,14 @@ services:
       # Deezer Configuration (empty, configurable via web UI)
       - RECOMMAND_DEEZER_ARL=${RECOMMAND_DEEZER_ARL:-}
 
-      # Download Method (default to streamrip)
+      # Download Method (streamrip, deemix, or soulseek)
       - RECOMMAND_DOWNLOAD_METHOD=${RECOMMAND_DOWNLOAD_METHOD:-streamrip}
+      - RECOMMAND_SOULSEEK_USERNAME=${RECOMMAND_SOULSEEK_USERNAME:-}
+      - RECOMMAND_SOULSEEK_PASSWORD=${RECOMMAND_SOULSEEK_PASSWORD:-}
+      - RECOMMAND_SOULSEEK_SEARCH_TIMEOUT=${RECOMMAND_SOULSEEK_SEARCH_TIMEOUT:-15}
+      - RECOMMAND_SOULSEEK_KEEP_ALIVE=${RECOMMAND_SOULSEEK_KEEP_ALIVE:-True}
+      - RECOMMAND_SOULSEEK_MIN_QUALITY=${RECOMMAND_SOULSEEK_MIN_QUALITY:-128}
+      - RECOMMAND_SOULSEEK_SHARE_MUSIC=${RECOMMAND_SOULSEEK_SHARE_MUSIC:-False}
 
       # Comment Tags (default values)
       - RECOMMAND_TARGET_COMMENT=${RECOMMAND_TARGET_COMMENT:-lb_recommendation}
@@ -58,8 +67,6 @@ services:
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    networks:
-      - re-command-network
 
 networks:
   re-command-network:

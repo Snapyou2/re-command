@@ -4,12 +4,13 @@
   <img src="web_ui/assets/logo.svg" width="200" alt="Re-command Logo">
 </p>
 
-`re-command` is a modern, containerized music recommendation and automation system that enhances your Navidrome music experience. It automatically discovers and downloads music recommendations from [ListenBrainz](https://listenbrainz.org) and [Last.fm](https://www.last.fm) using [Streamrip](https://github.com/nathom/streamrip) or [Deemix](https://deemix.org/), then organizes and tags them in your music library.
+`re-command` is a modern, containerized music recommendation and automation system that enhances your Navidrome music experience. It automatically discovers and downloads music recommendations from [ListenBrainz](https://listenbrainz.org) and [Last.fm](https://www.last.fm) using [Streamrip](https://github.com/nathom/streamrip), [Deemix](https://deemix.org/), or [Soulseek P2P](https://github.com/JurgenR/aioslsk), then organizes and tags them in your music library.
 
 ## Key Features
 
 *   **Multi-Source Recommendations:** Fetches music recommendations playlists from ListenBrainz, Last.fm, and LLM-powered suggestions (gemini/openrouter/llama.cpp). Includes a built-in cron scheduling for weekly automated downloads
-*   **Dual Download Methods:** Supports both modern Streamrip v2 and legacy Deemix for downloading from Deezer
+*   **Triple Download Methods:** Supports Streamrip v2, Deemix (both via Deezer), and Soulseek P2P for community-shared music with a higher catalog coverage
+*   **Persistent Download Queue:** Soulseek downloads run in a background queue with a persistent connection — no reconnect overhead per track. Configurable keep-alive, FLAC-only mode, and music library sharing
 *   **Fresh Releases Discovery:** Automatically shows newly released albums from ListenBrainz with a quick download button
 *   **Universal Link Downloads:** Download music straight to your sever with Spotify, YouTube, Deezer, and other platforms links using Songlink API integration (still in beta)
 *   **Track Previews & Feedback:** Preview tracks before downloading and submit feedback manually to ListenBrainz/Last.fm
@@ -34,12 +35,13 @@
 
 - [Docker](https://www.docker.com/get-started) and [Docker Compose](https://docs.docker.com/compose/) installed
 - A running [Navidrome](https://www.navidrome.org/) instance
-- [Deezer](https://www.deezer.com/) account with ARL token
 - A [ListenBrainz](https://listenbrainz.org/) account for ListenBrainz recommendations, fresh releases and LLM playlists
 
-Optional
+Optional (at least one download source required)
+- [Deezer](https://www.deezer.com/) account with ARL token (for Streamrip/Deemix)
+- [Soulseek](https://www.slsknet.org/) account (free registration, no email required)
 - A [Last.fm API account](https://www.last.fm/api/account/create) for Last.fm recommendations
-- A LLM API key or base URL for llama.cpp 
+- A LLM API key or base URL for llama.cpp for LLM recommendations
 
 ## Quick Start with Docker Compose Image
 
@@ -94,7 +96,8 @@ Runs automatically every Tuesday at 00:00 (configurable) via cron job. The proce
 
 **Phase 2: Download New Recommendations**
 - Fetches new recommendations from ListenBrainz, Last.fm and/or LLM playlists (based on what is enabled)
-- Downloads and tags new tracks using Streamrip or Deemix
+- Downloads and tags new tracks using Streamrip, Deemix, or Soulseek P2P
+- Soulseek downloads use a persistent client connection across the batch (no reconnect per track)
 - Organizes downloaded music into path/artist/album/track
 
 ### 2. Fresh Releases Discovery
@@ -116,21 +119,57 @@ Download music from any supported platform:
   - Youtube Music : tracks/some playlists
   - Amazon Music : very experimental
 
-### 4. Individual Track Downloads from Recommendation Playlists
+### 4. Soulseek P2P Downloads
+
+Soulseek is a peer-to-peer network where users share music files directly. It offers a much wider catalog than Deezer (user-contributed, rare/obscure tracks), often with high res audio, with no subscription required.
+
+**How it works:**
+- Select "Soulseek" as the download method in settings
+- Enter a Soulseek username and password
+- When you click download on a track, it's added to a **persistent background queue**
+- A single Soulseek client connection is maintained across all downloads (no reconnect per track)
+- Files are saved to `/app/temp_downloads/` and then organized to `/app/music/`
+
+**Per-track timeout:** The search phase has a timeout of `search_timeout + 5` seconds (~20s by default). If no results are found within that window, the track is skipped and the next one starts. Once a download begins, the transfer can take up to 5 minutes to complete.
+
+**Soulseek options:**
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Keep client always on | On | Keeps the Soulseek connection alive between downloads. If off, disconnects after 30s of idle |
+| Minimum quality | 128 kbps | Slider: 128kbps, 192kbps, 320kbps, or Lossless (FLAC only). Results below the threshold are filtered out |
+| Share music library | Off | Shares `/app/music/` with other Soulseek peers. Be careful about other files you could have in this directory, they will be accessible by anyone. |
+| Search timeout | 15s | How long to wait for search results before picking the best match |
+
+**Network configuration for sharing:**
+
+The Soulseek client listens on TCP ports `60000` (standard) and `60001` (obfuscated). These ports are exposed in the default `docker-compose.yml`. You must also open them in your firewall/cloud security group:
+
+```bash
+# UFW
+sudo ufw allow 60000/tcp comment 'Soulseek'
+sudo ufw allow 60001/tcp comment 'Soulseek Obfuscated'
+
+# OCI / AWS / GCP: Add ingress rule for TCP 60000-60001 from 0.0.0.0/0
+```
+
+**Note:** The Soulseek protocol uses the server-side observed IP, not the container's internal IP. Bridge networking with port mapping works identically to `--network host` — a custom bridge network is used by default in `docker-compose.yml`.
+
+### 5. Individual Track Downloads from Recommendation Playlists
 
 Via web interface:
 - Preview tracks before downloading (30-second previews)
 - Download individual tracks from recommendations
 - Submit manual like/dislike feedback to the playlist provider (defaults to ListenBrainz for LLM playlists)
 
-### 5. Library Maintenance
+### 6. Library Maintenance
 
 Cleans up your music library based on ratings (done automatically with the cron job but can be manually triggered in the settings):
 - Automatically removes tracks rated 3 stars or below
 - Submits feedback to ListenBrainz for disliked tracks
 - Clears recommendation tags from highly rated tracks
 
-### 6. Manual Control
+### 7. Manual Control
 
 Via web interface or command line:
 ```bash
@@ -162,7 +201,8 @@ python re-command.py --bypass-playlist-check
 | `RECOMMAND_ROOT_ND` | Navidrome server URL |
 | `RECOMMAND_USER_ND` | Navidrome username |
 | `RECOMMAND_PASSWORD_ND` | Navidrome password |
-| `RECOMMAND_DEEZER_ARL` | Deezer ARL token |
+| `RECOMMAND_DEEZER_ARL` | Deezer ARL token (required for Streamrip/Deemix) |
+| `RECOMMAND_DOWNLOAD_METHOD` | Download backend: `streamrip`, `deemix`, or `soulseek` |
 | `RECOMMAND_LISTENBRAINZ_ENABLED` | Enable ListenBrainz |
 | `RECOMMAND_TOKEN_LB` | ListenBrainz API token |
 | `RECOMMAND_USER_LB` | ListenBrainz username |
@@ -175,6 +215,12 @@ python re-command.py --bypass-playlist-check
 | `RECOMMAND_LLM_PROVIDER` | LLM provider (gemini/openrouter/llama) |
 | `RECOMMAND_LLM_API_KEY` | LLM API key |
 | `RECOMMAND_LLM_MODEL_NAME` | LLM model name |
+| `RECOMMAND_SOULSEEK_USERNAME` | Soulseek username (required for soulseek method) |
+| `RECOMMAND_SOULSEEK_PASSWORD` | Soulseek password |
+| `RECOMMAND_SOULSEEK_SEARCH_TIMEOUT` | Seconds to wait for Soulseek search results (default: 15) |
+| `RECOMMAND_SOULSEEK_KEEP_ALIVE` | Keep Soulseek client connected between downloads (default: True) |
+| `RECOMMAND_SOULSEEK_MIN_QUALITY` | Minimum bitrate: 0=lossless, 128, 192, or 320 (default: 128) |
+| `RECOMMAND_SOULSEEK_SHARE_MUSIC` | Share /app/music with other Soulseek peers (default: False) |
 
 ### Configuration File (Local)
 
@@ -205,27 +251,9 @@ The web interface exposes RESTful APIs:
 - `POST /api/download_from_link` - Download from universal music links
 - `GET /api/get_deezer_album_art` - Get album art from Deezer
 
-## LLM Model Comparison
+## LLM Models
 
-re-command supports various Large Language Models for music recommendations. From experience, gemini-3-flash-preview (or its predecessor gemini-2.5-flash) remains the best available free model amongst external APIs recommendations options. Here is a performance comparison of free OpenRouter models I tested for music discovery:
-
-### Best to Worst Performance:
-
-| Model | Response Time | Originality | Song Finding Reliability | Notes |
-|-------|---------------|-------------|---------------------------|-------|
-| **tngtech/deepseek-r1t2-chimera:free** | 1.9 min | 8/10 | 7/10 | Excellent creativity, good at finding songs |
-| **google/gemma-3-27b-it:free** | 1.4 min | 7/10 | 8/10 | Fast, reliable song discovery |
-| **meta-llama/llama-3.3-70b-instruct:free** | 1.5 min | 5/10 | 8/10 | Very reliable, but less creative |
-| **z-ai/glm-4.5-air:free** | 2.7 min | 6/10 | 7/10 | Decent but slow |
-| **amazon/nova-2-lite-v1:free** | 1.3 min | 7/10 | 5/10 | Fast but misses some songs |
-| **mistralai/mistral-small-3.1-24b-instruct:free** | 1.2 min | 4/10 | 5/10 | Fastest but least creative |
-| **qwen/qwen3-235b-a22b:free** | 3 min | 4/10 | 7/10 | Slow but reliable |
-| **arcee-ai/trinity-mini:free** | 1.2 min | 3/10 | 5/10 | Fast but poor performance |
-| **openai/gpt-oss-20b:free** | Failed | - | - | Not working |
-| **moonshotai/kimi-k2:free** | Failed | - | - | Not working |
-| **openai/gpt-oss-120b:free** | Failed | - | - | Not working |
-| **allenai/olmo-3-32b-think:free** | Failed | - | - | Not working |
-
+re-command supports various Large Language Models for music recommendations, from external APIs or self-hosted models. From experience, gemini-3.1-flash-preview (or its predecessor gemini-3-flash) remains the best available free model amongst external APIs recommendations options.
 
 ## Advanced Configuration
 
@@ -290,10 +318,16 @@ Changes made via the web UI are saved to the mounted volume and survive containe
 **Docker Compose Errors (`http+docker` scheme):**
 - If you see `Not supported URL scheme http+docker`, it means you are using the older `docker-compose` (V1) which has compatibility issues. Use the modern command instead: `docker compose` (no hyphen).
 
-**Downloads Failing:**
+**Downloads Failing (Deezer):**
 - Verify ARL token is fresh (not expired)
 - Check Deezer account status (free accounts limited to 128kbps)
 - Ensure sufficient disk space
+
+**Downloads Failing (Soulseek):**
+- Verify Soulseek credentials are correct
+- Check logs for `Soulseek Queue:` messages
+- Try increasing search timeout if tracks are rare
+- Soulseek depends on other users being online — some tracks may not have sources
 
 **Web Interface Not Loading:**
 - Check port 5000 is not in use
@@ -320,3 +354,6 @@ Contributions are welcome! Areas for improvement:
 
 - Really looking forward sharing links to an Android re-command PWA (I tried and failed many times so PRs are welcomed!)
 - Adding Tidal as a streamrip option to get higher resolution downloads (quite unstable for now)
+- Album/playlist downloads via Soulseek (currently track-only)
+- Soulseek download resuming for interrupted transfers
+- Bandcamp download support

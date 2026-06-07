@@ -7,6 +7,9 @@ import argparse
 import json
 from tqdm import tqdm
 
+# Apply aiofiles 0.7.0 compat shim before any aioslsk imports
+import aioslsk_compat  # noqa: F401
+
 from config import *
 from apis.deezer_api import DeezerAPI
 from apis.lastfm_api import LastFmAPI
@@ -234,6 +237,8 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
                 except Exception as e:
                     tqdm.write(f"Error processing {song_info['artist']} - {song_info['title']}: {e}")
 
+        await track_downloader.close_soulseek()
+
         if downloaded_songs_info:
             print("\nSuccessfully downloaded and tagged the following songs:")
             for song in downloaded_songs_info:
@@ -391,6 +396,7 @@ if __name__ == "__main__":
     # Initial status update
     update_status_file(args.download_id, "in_progress", "Download initiated.")
 
+    batch_lock = "/tmp/recommand_batch_download.lock"
     try:
         if args.source == "fresh_releases":
             asyncio.run(process_fresh_releases_albums(download_id=args.download_id))
@@ -401,4 +407,7 @@ if __name__ == "__main__":
             asyncio.run(process_recommendations(source=args.source, bypass_playlist_check=args.bypass_playlist_check, download_id=args.download_id))
     except Exception as e:
         update_status_file(args.download_id, "failed", f"Download failed: {e}", f"Download failed: {e}")
-        raise # Re-raise the exception after updating status
+        raise
+    finally:
+        if os.path.exists(batch_lock):
+            os.remove(batch_lock)

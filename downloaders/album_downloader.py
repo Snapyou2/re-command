@@ -62,6 +62,9 @@ class AlbumDownloader:
                 downloaded_files = self._download_album_deemix(deezer_link, album_info, temp_download_folder, deezer_arl)
             elif current_download_method == "streamrip":
                 downloaded_files = await self._download_album_streamrip(deezer_link, album_info, temp_download_folder, deezer_arl)
+            elif current_download_method == "soulseek":
+                downloaded_files = await self._download_album_soulseek(
+                    deezer_link, album_info, temp_download_folder)
             else:
                 error_msg = f"Unknown DOWNLOAD_METHOD: {current_download_method}. Skipping download for {album_info['artist']} - {album_info['album']}."
                 print(error_msg)
@@ -153,6 +156,38 @@ class AlbumDownloader:
             error_msg = f"Failed to download album {album_info['artist']} - {album_info['album']}."
             print(error_msg)
             return {"status": "error", "message": error_msg}
+
+    async def _download_album_soulseek(self, deezer_link, album_info, temp_download_folder):
+        album_id = deezer_link.split('/')[-1]
+        from apis.deezer_api import DeezerAPI
+        from downloaders.track_downloader import TrackDownloader
+
+        deezer_api = DeezerAPI()
+        deezer_tracks = await deezer_api.get_deezer_album_tracks(album_id)
+        if not deezer_tracks:
+            print(f"Could not get track list for album {album_info['album']}")
+            return []
+
+        tagger = self.tagger
+        track_downloader = TrackDownloader(tagger)
+        downloaded_files = []
+        for track in deezer_tracks:
+            song_info = {
+                'artist': album_info['artist'],
+                'title': track.get('title', 'Unknown'),
+                'album': album_info['album'],
+                'release_date': album_info.get('release_date', ''),
+                'recording_mbid': '',
+                'source': 'Fresh Releases',
+                'album_art': album_info.get('album_art'),
+            }
+            filepath = await track_downloader.download_track(
+                song_info, lb_recommendation=False)
+            if filepath:
+                downloaded_files.append(filepath)
+
+        await track_downloader.close_soulseek()
+        return downloaded_files
 
     async def _get_deezer_album_link(self, album_info):
         """Fetches Deezer album link."""

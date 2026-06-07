@@ -16,9 +16,32 @@ from utils import DeezerAuthError, update_status_file
 class TrackDownloader:
     def __init__(self, tagger):
         self.tagger = tagger
-        # Initial load, will be reloaded dynamically
         self.temp_download_folder = config.TEMP_DOWNLOAD_FOLDER
         self.deezer_arl = config.DEEZER_ARL
+        self._soulseek_client = None
+        self._soulseek_downloader = None
+
+    async def _ensure_soulseek(self):
+        if self._soulseek_client is None:
+            from downloaders.soulseek_downloader import SoulseekDownloader
+            self._soulseek_downloader = SoulseekDownloader(
+                username=config.SOULSEEK_USERNAME,
+                password=config.SOULSEEK_PASSWORD,
+                download_dir=config.TEMP_DOWNLOAD_FOLDER,
+                search_timeout=config.SOULSEEK_SEARCH_TIMEOUT,
+            )
+            self._soulseek_client = await self._soulseek_downloader.create_client()
+            await self._soulseek_client.start()
+            await self._soulseek_client.login()
+
+    async def close_soulseek(self):
+        if self._soulseek_client:
+            try:
+                await self._soulseek_client.stop()
+            except Exception:
+                pass
+            self._soulseek_client = None
+            self._soulseek_downloader = None
 
     async def download_track(self, song_info, lb_recommendation=None):
         """Downloads a track using the configured method."""
@@ -58,20 +81,24 @@ class TrackDownloader:
         with open(os.path.join(config.LOCAL_DATA_DIR, 'debug.log'), 'a') as f:
             f.write(f"TRACK_DOWNLOADER_START: {debug_info}\n")
 
-        deezer_link = await self._get_deezer_link_and_details(song_info)
-        if not deezer_link:
-            print(f"  ❌ No Deezer link found for {song_info['artist']} - {song_info['title']}")
-            return None
-
         downloaded_file_path = None
         try:
-            if current_download_method == "deemix":
-                downloaded_file_path = self._download_track_deemix(deezer_link, song_info, temp_download_folder)
-            elif current_download_method == "streamrip":
-                downloaded_file_path = await self._download_track_streamrip(deezer_link, song_info, temp_download_folder)
+            if current_download_method == "soulseek":
+                downloaded_file_path = await self._download_track_soulseek(
+                    song_info, temp_download_folder)
             else:
-                print(f"  ❌ Unknown DOWNLOAD_METHOD: {current_download_method}")
-                return None
+                deezer_link = await self._get_deezer_link_and_details(song_info)
+                if not deezer_link:
+                    print(f"  ❌ No Deezer link found for {song_info['artist']} - {song_info['title']}")
+                    return None
+
+                if current_download_method == "deemix":
+                    downloaded_file_path = self._download_track_deemix(deezer_link, song_info, temp_download_folder)
+                elif current_download_method == "streamrip":
+                    downloaded_file_path = await self._download_track_streamrip(deezer_link, song_info, temp_download_folder)
+                else:
+                    print(f"  ❌ Unknown DOWNLOAD_METHOD: {current_download_method}")
+                    return None
         except DeezerAuthError:
             # Re-raise authentication errors to be handled by the caller
             raise
@@ -299,6 +326,33 @@ class TrackDownloader:
             return filepath
 
         return None
+
+    async def _download_track_soulseek(self, song_info, temp_download_folder):
+        if not config.SOULSEEK_USERNAME:
+            print(f"  ❌ Soulseek username not configured. Set SOULSEEK_USERNAME and SOULSEEK_PASSWORD.")
+            return None
+        from aioslsk_compat import _makedirs, _path_exists, _path_getsize  # noqa: ensure aiofiles patched
+        from downloaders.soulseek_downloader import SoulseekDownloader
+        from aioslsk.exceptions import AioSlskException
+
+        await self._ensure_soulseek()
+        try:
+            filepath = await self._soulseek_downloader.search_and_download_with_client(
+                self._soulseek_client,
+                song_info['artist'],
+                song_info['title'],
+                search_timeout=config.SOULSEEK_SEARCH_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            print(f"  ⏱ Soulseek search timed out for {song_info['artist']} - {song_info['title']}")
+            return None
+        except Exception as e:
+            print(f"  ❌ Soulseek error for {song_info['artist']} - {song_info['title']}: {e}")
+            return None
+        if filepath:
+            dir_path = os.path.dirname(filepath)
+            os.system(f'chown -R 1000:1000 "{dir_path}"')
+        return filepath
 
     def _debug_list_files(self, directory):
         """Lists all files in the directory for debugging purposes."""
