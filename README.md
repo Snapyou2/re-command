@@ -12,7 +12,7 @@
 
 *   **Multi-source recommendations:** Fetches music recommendations playlists from ListenBrainz, Last.fm, and LLM-powered suggestions (gemini/openrouter/llama.cpp). Includes a built-in cron scheduling for weekly automated downloads
 *   **Triple download methods:** Supports Streamrip v2, Deemix (both via Deezer), and Soulseek P2P for community-shared music with a higher catalog coverage
-*   **Persistent download queue:** Soulseek downloads run in a background queue with a persistent connection — no reconnect overhead per track. Configurable keep-alive, FLAC-only mode, and music library sharing
+*   **Persistent download queue:** Soulseek downloads run in a background queue with a persistent connection, no reconnect overhead per track. Configurable keep-alive, FLAC-only mode, and music library sharing
 *   **Fresh releases discovery:** Automatically shows newly released albums from ListenBrainz with a quick download button
 *   **Universal link downloads:** Download music straight to your sever with Spotify, YouTube, Deezer, and other platforms links using Songlink API integration (still in beta)
 *   **Track previews & feedback:** Preview tracks before downloading and submit feedback manually to ListenBrainz/Last.fm
@@ -154,7 +154,7 @@ sudo ufw allow 60001/tcp comment 'Soulseek Obfuscated'
 # OCI / AWS / GCP: Add ingress rule for TCP 60000-60001 from 0.0.0.0/0
 ```
 
-**Note:** The Soulseek protocol uses the server-side observed IP, not the container's internal IP. Bridge networking with port mapping works identically to `--network host` — a custom bridge network is used by default in `docker-compose.yml`.
+**Note:** The Soulseek protocol uses the server-side observed IP, not the container's internal IP. Bridge networking with port mapping works identically to `--network host`, a custom bridge network is used by default in `docker-compose.yml`.
 
 ### 5. Individual track downloads from recommendation playlists
 
@@ -328,7 +328,7 @@ Changes made via the web UI are saved to the mounted volume and survive containe
 - Verify Soulseek credentials are correct
 - Check logs for `Soulseek Queue:` messages
 - Try increasing search timeout if tracks are rare
-- Soulseek depends on other users being online — some tracks may not have sources
+- Soulseek depends on other users being online, some tracks may not have sources
 
 **Web interface not loading:**
 - Check port 5000 is not in use
