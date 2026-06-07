@@ -1,35 +1,36 @@
-# re-command: Automated Music Recommendation System for Navidrome
+# re-command: Automated music recommendation system for Navidrome
 
 <p align="center">
   <img src="web_ui/assets/logo.svg" width="200" alt="Re-command Logo">
 </p>
 
+> 🌟 **Thank you for 100 stars!** Experimental Soulseek P2P integration has been added! Download & share thanks to the community-powered network.
+
 `re-command` is a modern, containerized music recommendation and automation system that enhances your Navidrome music experience. It automatically discovers and downloads music recommendations from [ListenBrainz](https://listenbrainz.org) and [Last.fm](https://www.last.fm) using [Streamrip](https://github.com/nathom/streamrip), [Deemix](https://deemix.org/), or [Soulseek P2P](https://github.com/JurgenR/aioslsk), then organizes and tags them in your music library.
 
-## Key Features
+## Key features
 
-*   **Multi-Source Recommendations:** Fetches music recommendations playlists from ListenBrainz, Last.fm, and LLM-powered suggestions (gemini/openrouter/llama.cpp). Includes a built-in cron scheduling for weekly automated downloads
-*   **Triple Download Methods:** Supports Streamrip v2, Deemix (both via Deezer), and Soulseek P2P for community-shared music with a higher catalog coverage
-*   **Persistent Download Queue:** Soulseek downloads run in a background queue with a persistent connection — no reconnect overhead per track. Configurable keep-alive, FLAC-only mode, and music library sharing
-*   **Fresh Releases Discovery:** Automatically shows newly released albums from ListenBrainz with a quick download button
-*   **Universal Link Downloads:** Download music straight to your sever with Spotify, YouTube, Deezer, and other platforms links using Songlink API integration (still in beta)
-*   **Track Previews & Feedback:** Preview tracks before downloading and submit feedback manually to ListenBrainz/Last.fm
-*   **Dynamic Playlist Support:** Downloaded tracks are tagged with configurable comment markers for dynamic playlists
-*   **Automated Library Maintenance:** Removes tracks from previous recommendations and submit scrobbling feedbacks based on your Navidrome ratings
-*   **Containerized Deployment:** Full Docker support with automated setup and configuration
+*   **Multi-source recommendations:** Fetches music recommendations playlists from ListenBrainz, Last.fm, and LLM-powered suggestions (gemini/openrouter/llama.cpp). Includes a built-in cron scheduling for weekly automated downloads
+*   **Triple download methods:** Supports Streamrip v2, Deemix (both via Deezer), and Soulseek P2P for community-shared music with a higher catalog coverage
+*   **Persistent download queue:** Soulseek downloads run in a background queue with a persistent connection — no reconnect overhead per track. Configurable keep-alive, FLAC-only mode, and music library sharing
+*   **Fresh releases discovery:** Automatically shows newly released albums from ListenBrainz with a quick download button
+*   **Universal link downloads:** Download music straight to your sever with Spotify, YouTube, Deezer, and other platforms links using Songlink API integration (still in beta)
+*   **Track previews & feedback:** Preview tracks before downloading and submit feedback manually to ListenBrainz/Last.fm
+*   **Dynamic playlist support:** Downloaded tracks are tagged with configurable comment markers for dynamic playlists
+*   **Automated library maintenance:** Removes tracks from previous recommendations and submit scrobbling feedbacks based on your Navidrome ratings
+*   **Containerized deployment:** Full Docker support with automated setup and configuration
 
-## Table of Contents
+## Table of contents
 
 - [Prerequisites](#prerequisites)
-- [Quick Start with Docker Compose Image](#quick-start-with-docker-compose-image)
-- [Alternative: Quick Start with Docker (Script)](#alternative-quick-start-with-docker-script)
+- [Quick start with Docker compose image](#quick-start-with-docker-compose-image)
 - [Screenshots](#screenshots)
-- [Usage Modes](#usage-modes)
-- [Manual Configuration](#manual-configuration)
-- [LLM Model Comparison](#llm-model-comparison)
-- [Advanced Configuration](#advanced-configuration)
+- [Usage modes](#usage-modes)
+- [Manual configuration](#manual-configuration)
+- [LLM model comparison](#llm-model-comparison)
+- [Advanced configuration](#advanced-configuration)
 - [Troubleshooting](#troubleshooting)
-- [Contributing / Roadmap](#contributing--roadmap)
+- [Contributing / roadmap](#contributing--roadmap)
 
 ## Prerequisites
 
@@ -43,7 +44,7 @@ Optional (at least one download source required)
 - A [Last.fm API account](https://www.last.fm/api/account/create) for Last.fm recommendations
 - A LLM API key or base URL for llama.cpp for LLM recommendations
 
-## Quick Start with Docker Compose Image
+## Quick start with Docker compose image
 
 ### 1. Download only the docker.yml 
 
@@ -60,13 +61,13 @@ It should look like this:
       - /home/snapyou2/Music/.tempfolder:/app/temp_downloads
 ```
 
-### 2. Start the Application
+### 2. Start the application
 
 ```bash
 docker compose up -d
 ```
 
-### 3. Access the Web Interface
+### 3. Access the web interface
 
 Open `http://localhost:5000` in your browser. Configure Navidrome access, playlist providers, and Deezer ARL in the settings. You can also click the "Create Smart Playlists" after you configured everything and then trigger a rescan of your Navidrome library.
 
@@ -80,13 +81,13 @@ Open `http://localhost:5000` in your browser. Configure Navidrome access, playli
 
 ![Settings](web_ui/assets/settings.jpg)
 
-## Usage Modes
+## Usage modes
 
-### 1. Automated Weekly Downloads
+### 1. Automated weekly downloads
 
 Runs automatically every Tuesday at 00:00 (configurable) via cron job. The process runs in two phases:
 
-**Phase 1: Library Cleanup & Feedback**
+**Phase 1: Library cleanup & feedback**
 - Scans your Navidrome library for tracks with recommendation comments
 - **1 star**: Sends negative feedback and deletes the track
 - **2-3 stars**: Deletes the track (no feedback)
@@ -94,13 +95,13 @@ Runs automatically every Tuesday at 00:00 (configurable) via cron job. The proce
 - **5 stars**: Sends positive feedback, keeps the track and removes the recommendation comment
 - Feedback is submitted to ListenBrainz and Last.fm based on your ratings
 
-**Phase 2: Download New Recommendations**
+**Phase 2: Download new recommendations**
 - Fetches new recommendations from ListenBrainz, Last.fm and/or LLM playlists (based on what is enabled)
 - Downloads and tags new tracks using Streamrip, Deemix, or Soulseek P2P
 - Soulseek downloads use a persistent client connection across the batch (no reconnect per track)
 - Organizes downloaded music into path/artist/album/track
 
-### 2. Fresh Releases Discovery
+### 2. Fresh releases discovery
 
 Discovery of newly released albums:
 - Fetches from ListenBrainz fresh releases API each time you load the web page
@@ -108,7 +109,7 @@ Discovery of newly released albums:
 - Allows selective downloading (only for one week if set up in the settings)
 - Organizes into music library
 
-### 3. Link Downloads
+### 3. Link downloads
 
 Download music from any supported platform:
 - Paste a music link from your favorite music app and get them downloaded on your server using Songlink API. Links supported by service :
@@ -119,9 +120,9 @@ Download music from any supported platform:
   - Youtube Music : tracks/some playlists
   - Amazon Music : very experimental
 
-### 4. Soulseek P2P Downloads
+### 4. Soulseek P2P downloads
 
-Soulseek is a peer-to-peer network where users share music files directly. It offers a much wider catalog than Deezer (user-contributed, rare/obscure tracks), often with high res audio, with no subscription required.
+Soulseek is a peer-to-peer network where users share music files directly. It offers an alternative to Deezer (user-contributed, rare/obscure tracks), often with high res audio, with no subscription required.
 
 **How it works:**
 - Select "Soulseek" as the download method in settings
@@ -155,21 +156,21 @@ sudo ufw allow 60001/tcp comment 'Soulseek Obfuscated'
 
 **Note:** The Soulseek protocol uses the server-side observed IP, not the container's internal IP. Bridge networking with port mapping works identically to `--network host` — a custom bridge network is used by default in `docker-compose.yml`.
 
-### 5. Individual Track Downloads from Recommendation Playlists
+### 5. Individual track downloads from recommendation playlists
 
 Via web interface:
 - Preview tracks before downloading (30-second previews)
 - Download individual tracks from recommendations
 - Submit manual like/dislike feedback to the playlist provider (defaults to ListenBrainz for LLM playlists)
 
-### 6. Library Maintenance
+### 6. Library maintenance
 
 Cleans up your music library based on ratings (done automatically with the cron job but can be manually triggered in the settings):
 - Automatically removes tracks rated 3 stars or below
 - Submits feedback to ListenBrainz for disliked tracks
 - Clears recommendation tags from highly rated tracks
 
-### 7. Manual Control
+### 7. Manual control
 
 Via web interface or command line:
 ```bash
@@ -192,9 +193,9 @@ python re-command.py --cleanup
 python re-command.py --bypass-playlist-check
 ```
 
-## Manual Configuration
+## Manual configuration
 
-### Environment Variables (Docker)
+### Environment variables (Docker)
 
 | Variable | Description |
 |----------|-------------|
@@ -222,11 +223,11 @@ python re-command.py --bypass-playlist-check
 | `RECOMMAND_SOULSEEK_MIN_QUALITY` | Minimum bitrate: 0=lossless, 128, 192, or 320 (default: 128) |
 | `RECOMMAND_SOULSEEK_SHARE_MUSIC` | Share /app/music with other Soulseek peers (default: False) |
 
-### Configuration File (Local)
+### Configuration file (local)
 
 Open the config.py and fill it with the proper information.
 
-### API Endpoints
+### API endpoints
 
 The web interface exposes RESTful APIs:
 
@@ -251,13 +252,13 @@ The web interface exposes RESTful APIs:
 - `POST /api/download_from_link` - Download from universal music links
 - `GET /api/get_deezer_album_art` - Get album art from Deezer
 
-## LLM Models
+## LLM models
 
 re-command supports various Large Language Models for music recommendations, from external APIs or self-hosted models. From experience, gemini-3.1-flash-preview (or its predecessor gemini-3-flash) remains the best available free model amongst external APIs recommendations options.
 
-## Advanced Configuration
+## Advanced configuration
 
-### Custom Download Quality
+### Custom download quality
 If you have a Deezer Premium account, you can get better mp3 quality.
 
 Edit the Streamrip configuration in Docker:
@@ -272,7 +273,7 @@ docker exec -it re-command bash
 # Edit /root/.config/deemix/config.json
 ```
 
-#### Persisting Deemix Quality Settings
+#### Persisting Deemix quality settings
 
 If you're using Deemix, quality settings will reset to default (128kbps MP3) after container redeployment unless you persist the configuration file. To maintain your quality settings across restarts, map the Deemix config file to a persistent location on your host:
 
@@ -296,45 +297,45 @@ volumes:
   - /path/to/your/appdata/deemix/config.json:/root/.config/deemix/config.json
 ```
 
-**Quality Settings:**
+**Quality settings:**
 - `maxBitrate: "9"` - FLAC (lossless, highest quality)
 - `maxBitrate: "3"` - 320kbps MP3
 - `maxBitrate: "1"` - 128kbps MP3 (default)
 
 After the container starts, Deemix will automatically populate the rest of the configuration parameters in the file.
 
-### Web UI Settings Persistence
+### Web UI settings persistence
 
 Changes made via the web UI are saved to the mounted volume and survive container restarts and image updates. On startup, web UI overrides are applied on top of environment variables.
 
 ## Troubleshooting
 
-### Quick Fixes
+### Quick fixes
 
-**Container Won't Start:**
+**Container won't start:**
 - Check all required environment variables are set
 - Verify Navidrome server is accessible
 
-**Docker Compose Errors (`http+docker` scheme):**
+**Docker compose errors (`http+docker` scheme):**
 - If you see `Not supported URL scheme http+docker`, it means you are using the older `docker-compose` (V1) which has compatibility issues. Use the modern command instead: `docker compose` (no hyphen).
 
-**Downloads Failing (Deezer):**
+**Downloads failing (Deezer):**
 - Verify ARL token is fresh (not expired)
 - Check Deezer account status (free accounts limited to 128kbps)
 - Ensure sufficient disk space
 
-**Downloads Failing (Soulseek):**
+**Downloads failing (Soulseek):**
 - Verify Soulseek credentials are correct
 - Check logs for `Soulseek Queue:` messages
 - Try increasing search timeout if tracks are rare
 - Soulseek depends on other users being online — some tracks may not have sources
 
-**Web Interface Not Loading:**
+**Web interface not loading:**
 - Check port 5000 is not in use
 - Verify container is running: `docker ps`
 - Check logs: `docker logs re-command`
 
-**Navidrome Integration Issues:**
+**Navidrome integration issues:**
 - Verify server URL and credentials
 - Check Navidrome version (v0.49.0+ recommended)
 - Ensure music library path is writable
@@ -348,7 +349,7 @@ Please add the docker logs when creating an issue:
 docker logs -f re-command-container
 ```
 
-## Contributing / Roadmap
+## Contributing / roadmap
 
 Contributions are welcome! Areas for improvement:
 
